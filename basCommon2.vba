@@ -156,3 +156,139 @@ Public Function FillStr(dataString As String, fillChar As String, fillByte As In
 
     FillStr = strRet
 End Function
+
+----------------------------------------------------------------
+import win32com.client
+from win32com.client import constants
+import traceback
+
+
+# =========================================================
+# カスタムドキュメントプロパティ取得
+# =========================================================
+def get_custom_document_properties(book, name: str) -> str:
+    """
+    指定されたExcel Workbookオブジェクトのカスタムドキュメントプロパティから値を取得する
+    """
+    try:
+        props = book.CustomDocumentProperties
+        for prop in props:
+            if prop.Name == name:
+                return str(prop.Value)
+        return ""
+    except Exception as e:
+        print(f"[GetCustomDocumentProperties Error] {e}")
+        print(traceback.format_exc())
+        return ""
+
+
+# =========================================================
+# INI形式シートの設定値を読み込む
+# =========================================================
+def read_ini_sheet(sheet, key: str) -> str:
+    try:
+        row_max = sheet.UsedRange.Rows.Count
+        for row in range(1, row_max + 1):
+            buf = str(sheet.Cells(row, 1).Value or "").strip()
+            if buf == "":
+                break
+            if buf.upper() == key.upper():
+                return str(sheet.Cells(row, 2).Value or "")
+        return ""
+    except Exception as e:
+        print(f"[ReadIniSheet Error] {e}")
+        return ""
+
+
+# =========================================================
+# CSV形式シートの設定値を読み込む
+# =========================================================
+def read_csv_sheet(sheet, key: str, row: int) -> str:
+    try:
+        col_max = sheet.UsedRange.Columns.Count
+        for col in range(1, col_max + 1):
+            buf = str(sheet.Cells(2, col).Value or "").strip()
+            if buf == "":
+                break
+            if buf.upper() == key.upper():
+                return str(sheet.Cells(row, col).Value or "")
+        return ""
+    except Exception as e:
+        print(f"[ReadCsvSheet Error] {e}")
+        return ""
+
+
+# =========================================================
+# INI形式シートの指定セルの色を取得する
+# =========================================================
+def get_ini_sheet_color(sheet, key: str) -> int:
+    try:
+        row_max = sheet.UsedRange.Rows.Count
+        for row in range(1, row_max + 1):
+            buf = str(sheet.Cells(row, 1).Value or "").strip()
+            if buf == "":
+                break
+            if buf.upper() == key.upper():
+                return sheet.Cells(row, 2).Interior.ColorIndex
+        return 0
+    except Exception as e:
+        print(f"[GetIniSheetColor Error] {e}")
+        return 0
+
+
+# =========================================================
+# シートを削除する
+# =========================================================
+def delete_sheet(book, sheet_name: str) -> bool:
+    try:
+        app = book.Application
+        app.DisplayAlerts = False
+        book.Worksheets(sheet_name).Delete()
+        return True
+    except Exception as e:
+        print(f"[DeleteSheet Error] {e}")
+        return False
+    finally:
+        book.Application.DisplayAlerts = True
+
+
+# =========================================================
+# シートをコピーする
+# =========================================================
+def copy_sheet(book, sheet_name: str, new_sheet_name: str) -> bool:
+    try:
+        app = book.Application
+        app.DisplayAlerts = False
+        book.Worksheets(sheet_name).Copy(After=book.Worksheets(book.Worksheets.Count))
+        new_sheet = book.Worksheets(book.Worksheets.Count)
+        new_sheet.Name = new_sheet_name
+        return True
+    except Exception as e:
+        print(f"[CopySheet Error] {e}")
+        return False
+    finally:
+        book.Application.DisplayAlerts = True
+
+
+# =========================================================
+# 文字列を指定バイト数になるように指定文字で埋める
+# =========================================================
+def fill_str(data_string: str, fill_char: str, fill_byte: int, fill_right_flag: bool = True) -> str:
+    """
+    VBAのLenB(StrConv(..., vbFromUnicode))に相当するバイト数で埋める。
+    PythonではShift_JISで近似。
+    """
+    try:
+        byte_len = len(data_string.encode("shift_jis", errors="ignore"))
+        fill_count = fill_byte - byte_len
+        if fill_count >= 1:
+            if fill_right_flag:
+                return data_string + (fill_char * fill_count)
+            else:
+                return (fill_char * fill_count) + data_string
+        else:
+            return data_string
+    except Exception as e:
+        print(f"[FillStr Error] {e}")
+        return data_string
+
