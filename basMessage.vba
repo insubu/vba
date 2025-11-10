@@ -100,3 +100,96 @@ Private Sub WriteLog(strMsg As String)
 ErrHandler:
     Close intFNum
 End Sub
+---------------------------------------------------------------------------
+
+import os
+import datetime
+import tkinter.messagebox as messagebox
+
+# === 模块常量 ===
+MODULE_NAME = "basMessage"
+
+MODE_LOG = 1
+MODE_DLG = 2
+MODE_ALL = 3
+
+APP_TITLE = "MyApp"     # ← 根据你的程序名修改
+TOOL_MENU = "ToolMenu"  # ← 用于生成 log 文件名
+
+# === 消息模板 ===
+MSG_000 = "#"
+MSG_001 = "#シート[#]の設定が不正です。"
+MSG_002 = "#シート[#（#行目）]の設定が不正です。"
+MSG_003 = "#シート[#（#行目）]の設定が重複しています。"
+MSG_004 = "#シート[#（#行目）]の設定が循環参照しています。"
+
+MSG_101 = "処理対象ブックが存在しません。"
+MSG_102 = "処理対象ブックが選択されていません。"
+MSG_103 = "対象シートは処理済みです。$再実行しますか？"
+MSG_104 = "属性シートに属性名[#]が定義されていません。"
+MSG_105 = "処理対象ブックが一時ファイルのためファイル保存先を特定できません。$ブックを保存するか、ファイル保存先を指定してください。"
+
+MSG_201 = "エラーデータが存在します。$確認してください。"
+MSG_202 = "チェック処理が正常に終了しました。"
+
+MSG_301 = APP_TITLE + "をインストールします。"
+MSG_302 = APP_TITLE + "をアンインストールします。"
+
+MSG_999 = "予期せぬエラーが発生しました。$#-#$[#:#]"
+
+
+# === 核心函数 ===
+def output_msg(str_msg: str, int_mode: int,
+               str_param: str = "", int_style: int = 0, str_title: str = "") -> int:
+    """
+    メッセージを出力（ログ＋ダイアログ）
+    str_msg : メッセージ定義文字列（#/$ を含む）
+    int_mode: MODE_LOG / MODE_DLG / MODE_ALL
+    str_param: '#' 置換パラメータ（例: "Book1#Sheet2#10"）
+    int_style: messagebox で使うスタイル（0=OK）
+    str_title: ダイアログタイトル
+    """
+    try:
+        # --- ① パラメータ置換 ---
+        if str_param:
+            opt = str_param.split("#")
+            for o in opt:
+                if "#" in str_msg:
+                    str_msg = str_msg.replace("#", o, 1)
+
+        # --- ② ログ出力 ---
+        if int_mode & MODE_LOG:
+            write_log(str_msg.replace("$", ""))
+
+        # --- ③ ダイアログ表示 ---
+        if int_mode & MODE_DLG:
+            if not str_title:
+                str_title = APP_TITLE
+            msg_text = str_msg.replace("$", "\n")
+
+            # int_style 代替: 0=okonly, 1=okcancel 等 (簡易対応)
+            if int_style == 0:
+                messagebox.showinfo(str_title, msg_text)
+            elif int_style == 1:
+                return messagebox.askokcancel(str_title, msg_text)
+            elif int_style == 2:
+                return messagebox.askyesno(str_title, msg_text)
+            else:
+                messagebox.showinfo(str_title, msg_text)
+
+        return 0
+
+    except Exception as e:
+        messagebox.showerror("Error", f"{MODULE_NAME}-DispMsg[{type(e).__name__}: {e}]")
+        return -1
+
+
+# === ログ出力 ===
+def write_log(str_msg: str):
+    try:
+        log_path = os.path.join(os.getcwd(), f"{TOOL_MENU}.log")
+        timestamp = datetime.datetime.now().strftime("%Y/%m/%d %H:%M:%S")
+        with open(log_path, "a", encoding="utf-8") as f:
+            f.write(f"{timestamp},{str_msg}\n")
+    except Exception as e:
+        print(f"WriteLog Error: {e}")
