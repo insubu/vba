@@ -196,3 +196,121 @@ Public Function UrlEncode(sSrc As String) As String
 ErrHandler:
     Call OutputMsg(MSG_999, MODE_ALL, mModuleName & "#" & "UrlEncode" & "#" & Err.number & "#" & Err.Description, vbCritical, APP_TITLE)
 End Function
+-------------------------------------------------------------
+
+import ctypes
+import os
+import urllib.parse
+from tkinter import filedialog, Tk
+
+
+# =========================================================
+# ファイル選択ダイアログを表示
+# =========================================================
+def open_file_dialog(dir_path: str = "", title: str = "", filetypes: str = "") -> str:
+    root = Tk()
+    root.withdraw()  # 隠す
+    file_path = filedialog.askopenfilename(
+        initialdir=dir_path or os.getcwd(),
+        title=title or "ファイルを選択してください",
+        filetypes=[("すべてのファイル", "*.*")] if not filetypes else parse_filter(filetypes)
+    )
+    root.destroy()
+    return file_path or ""
+
+
+# =========================================================
+# ファイル保存ダイアログを表示
+# =========================================================
+def save_file_dialog(dir_path: str = "", title: str = "", filetypes: str = "", ext: str = "") -> str:
+    root = Tk()
+    root.withdraw()
+    file_path = filedialog.asksaveasfilename(
+        initialdir=dir_path or os.getcwd(),
+        title=title or "ファイルを保存",
+        defaultextension=ext,
+        filetypes=[("すべてのファイル", "*.*")] if not filetypes else parse_filter(filetypes)
+    )
+    root.destroy()
+    return file_path or ""
+
+
+# =========================================================
+# フォルダ選択ダイアログを表示
+# =========================================================
+def folder_dialog(title: str = "", dir_path: str = "") -> str:
+    root = Tk()
+    root.withdraw()
+    folder = filedialog.askdirectory(
+        title=title or "フォルダを選択してください",
+        initialdir=dir_path or os.getcwd()
+    )
+    root.destroy()
+    return folder or ""
+
+
+# =========================================================
+# ファイルを関連付けされたアプリで開く
+# =========================================================
+def execute_shell(file_path: str, style: int = 1) -> int:
+    ShellExecute = ctypes.windll.shell32.ShellExecuteW
+    hwnd = ctypes.windll.user32.GetForegroundWindow()
+    result = ShellExecute(hwnd, "open", file_path, None, None, style)
+    return result
+
+
+# =========================================================
+# 文字列の両端にダブルクォーテーションを付加
+# =========================================================
+def put_dq(data: str) -> str:
+    return f'"{data}"'
+
+
+# =========================================================
+# タブ・スペースをトリム
+# =========================================================
+def trim_ex(data: str) -> str:
+    return data.strip(" \t")
+
+
+# =========================================================
+# 半角スペース専用トリム
+# =========================================================
+def ltrim_hankaku(data: str) -> str:
+    return data.lstrip(" ")
+
+
+def rtrim_hankaku(data: str) -> str:
+    return data.rstrip(" ")
+
+
+def trim_hankaku(data: str) -> str:
+    return data.strip(" ")
+
+
+# =========================================================
+# MIME形式(x-www-form-urlencoded)に変換
+# =========================================================
+def url_encode(s: str) -> str:
+    try:
+        # urllib.parse.quote_plus 可直接实现同样效果
+        return urllib.parse.quote_plus(s, safe="")
+    except Exception as e:
+        print(f"[UrlEncode Error] {e}")
+        return ""
+
+
+# =========================================================
+# 補助：VBAのFilter文字列をtkinter用に変換
+# =========================================================
+def parse_filter(vba_filter: str):
+    """
+    VBAのFilter形式（例: "CSVファイル (*.csv)|*.csv|すべてのファイル (*.*)|*.*"）
+    を tkinter の filetypes=[("CSVファイル","*.csv"), ("すべてのファイル","*.*")]
+    に変換する
+    """
+    parts = vba_filter.split("|")
+    result = []
+    for i in range(0, len(parts) - 1, 2):
+        result.append((parts[i], parts[i + 1]))
+    return result
