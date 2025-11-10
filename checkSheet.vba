@@ -13,4 +13,20 @@ Private Function GetAttributeInfoIndex(AttrName As String) As Long
     
     GetAttributeInfoIndex = lngIndex
 End Function
+--------------------------------------------
+def get_attribute_info_index(attr_name: str, attribute_info_list) -> int:
+    """
+    VBAの GetAttributeInfoIndex を Python に置き換えたもの。
 
+    Args:
+        attr_name: 検索する属性名
+        attribute_info_list: AttributeInfo オブジェクトのリスト
+                             各要素は obj.AttrName で参照可能
+
+    Returns:
+        int: インデックス（見つからなければ -1）
+    """
+    for i, attr in enumerate(attribute_info_list):
+        if attr.AttrName == attr_name:
+            return i
+    return -1
