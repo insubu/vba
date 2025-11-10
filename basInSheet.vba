@@ -596,3 +596,183 @@ Private Function ShowIniSheet(sheet As Worksheet) As Boolean
     Windows(ThisWorkbook.Name).WindowState = xlMaximized
     sheet.Activate
 End Function
+------------------------------------------------------------------------
+
+from enum import Enum
+from dataclasses import dataclass, field
+from typing import List, Optional
+
+
+# =============================
+# Enum 定义
+# =============================
+
+class SaveMode(Enum):
+    CSV = "CSV"
+    TEXT_TAB = "TEXT(タブ)"
+    TEXT_COMMA = "TEXT(カンマ)"
+    FIXED = "固定長"
+
+
+class AttributeType(Enum):
+    NONE = "なし"
+    NARROW = "半角"
+    WIDE = "全角"
+    ALPHANUMERIC = "英数字"
+    NARROW_KANA = "半角カナ"
+    INTEGER = "整数"
+    SMALL = "小数"
+    DATE = "日付"
+
+
+class LetterType(Enum):
+    NONE = "なし"
+    CAPITAL = "大文字"
+    SMALL = "小文字"
+
+
+class ByteEditMode(Enum):
+    NONE = "なし"
+    FIXED = "固定"
+    COMPLETE = "補完"
+    MAX = "最大"
+
+
+class TrimSpaceMode(Enum):
+    NONE = "なし"
+    ALL = "全て"
+    LEFT = "前方"
+    RIGHT = "後方"
+    BOTH = "両端"
+
+
+class ReplaceMode(Enum):
+    COMPLETE = "完全一致"
+    PARTIAL = "部分一致"
+
+
+# =============================
+# 数据结构定义
+# =============================
+
+@dataclass
+class OriginCell:
+    row: int = 0
+    col: int = 0
+    delete_upper_row: bool = False
+    add_header: bool = False
+
+
+@dataclass
+class PeriodCode:
+    start: str = ""
+    end: str = ""
+
+
+@dataclass
+class MainSheet:
+    save_dir_path: str = ""
+    save_mode: Optional[SaveMode] = None
+    save_extension: str = ""
+    origin_cell: OriginCell = field(default_factory=OriginCell)
+    text_separator: str = ","
+    err_cell_color: int = 0
+    edit_cell_color: int = 0
+    result_header_name: str = ""
+    trim_header_space: TrimSpaceMode = TrimSpaceMode.NONE
+    trim_header_crlf: bool = False
+    period_codes: List[PeriodCode] = field(default_factory=list)
+
+
+@dataclass
+class AttributeSheet:
+    attr_name: str = ""
+    col_pos: int = 0
+    indispensable: bool = False
+    attr_type: AttributeType = AttributeType.NONE
+    letter_type: LetterType = LetterType.NONE
+    byte_size_left: int = 0
+    byte_size_right: int = 0
+    byte_edit_mode: ByteEditMode = ByteEditMode.NONE
+    trim_space: TrimSpaceMode = TrimSpaceMode.NONE
+    trim_crlf: bool = False
+    date_format_in: str = ""
+    date_format_out: str = ""
+    complete_char: str = ""
+
+
+@dataclass
+class ReplaceSheet:
+    key_string: str = ""
+    replace_string: str = ""
+    replace_mode: ReplaceMode = ReplaceMode.COMPLETE
+
+
+# =============================
+# 全局变量（对应 VBA Public）
+# =============================
+MainInfo = MainSheet()
+AttributeInfo: List[AttributeSheet] = []
+ReplaceInfo: List[ReplaceSheet] = []
+
+
+# =============================
+# 函数框架
+# =============================
+
+def read_all_sheet() -> bool:
+    """Read main / attribute / replace sheets"""
+    try:
+        if not read_main_sheet():
+            return False
+        if not read_attribute_sheet():
+            return False
+        if not read_replace_sheet():
+            return False
+        return True
+    except Exception as e:
+        print(f"[ReadAllSheet Error] {e}")
+        return False
+
+
+def read_main_sheet() -> bool:
+    """读取メインシート"""
+    global MainInfo
+    try:
+        # TODO: read values from shtMain (via openpyxl or pandas)
+        # Example placeholders:
+        MainInfo.save_dir_path = "C:\\output"
+        MainInfo.save_mode = SaveMode.CSV
+        MainInfo.save_extension = "csv"
+        MainInfo.text_separator = ","
+        print("[INFO] MainSheet loaded successfully")
+        return True
+    except Exception as e:
+        print(f"[ReadMainSheet Error] {e}")
+        return False
+
+
+def read_attribute_sheet() -> bool:
+    """读取属性シート"""
+    global AttributeInfo
+    try:
+        AttributeInfo.clear()
+        # TODO: 从 shtAttribute 读取行数据
+        print("[INFO] AttributeSheet loaded successfully")
+        return True
+    except Exception as e:
+        print(f"[ReadAttributeSheet Error] {e}")
+        return False
+
+
+def read_replace_sheet() -> bool:
+    """读取置換シート"""
+    global ReplaceInfo
+    try:
+        ReplaceInfo.clear()
+        # TODO: 从 shtReplace 读取行数据
+        print("[INFO] ReplaceSheet loaded successfully")
+        return True
+    except Exception as e:
+        print(f"[ReadReplaceSheet Error] {e}")
+        return False
