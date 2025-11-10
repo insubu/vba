@@ -64,3 +64,58 @@ Public Function GetOneData(strData As String, Optional delimiter As String = ","
 ErrHandler:
     Call OutputMsg(MSG_999, MODE_ALL, mModuleName & "#" & "GetOneData" & "#" & Err.number & "#" & Err.Description, vbCritical, APP_TITLE)
 End Function
+-----------------------------------------------------------------
+
+def get_one_data(data: str, delimiter: str = ",") -> str:
+    """
+    Equivalent of VBA GetOneData.
+    Extracts one field (possibly quoted) from a delimited string.
+    Returns the first field and modifies the input string (like VBA ByRef).
+    """
+    if len(delimiter) != 1:
+        raise ValueError("Delimiter must be a single character.")
+
+    # Remove tabs and leading spaces
+    buf = data.replace("\t", "").lstrip()
+
+    dq = 0      # double quote flag (0: even, 1: odd)
+    next_exists = False
+    ret = ""
+
+    if buf.startswith('"'):
+        # Starts with a quote
+        for pos, ch in enumerate(buf, start=1):
+            if ch == '"':
+                dq ^= 1
+            elif ch == delimiter and dq == 0:
+                # End of current field
+                ret = buf[:pos - 1]
+                data = buf[pos:]  # next field data
+                next_exists = True
+                break
+    else:
+        # Not starting with quote
+        if delimiter in buf:
+            idx = buf.index(delimiter)
+            ret = buf[:idx]
+            data = buf[idx + 1:]
+            next_exists = True
+
+    if not next_exists:
+        # Last field
+        ret = buf
+        data = ""
+
+    # Trim trailing spaces
+    ret = ret.rstrip()
+
+    # Trim one leading and trailing quote if present
+    if ret.startswith('"'):
+        ret = ret[1:]
+    if ret.endswith('"'):
+        ret = ret[:-1]
+
+    # Final trim
+    ret = ret.strip()
+
+    return ret
