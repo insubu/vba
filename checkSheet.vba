@@ -1,125 +1,77 @@
-def edit_value(str_value: str, attr_index: int, attribute_info, replace_info):
-    """
-    Python version of VBA EditValue
-    Params:
-        str_value (str): 原值
-        attr_index (int): AttributeInfo 的索引
-        attribute_info (list[dict]): 属性定义信息（取代 VBA 的 AttributeInfo 数组）
-        replace_info (list[dict]): 替换规则（取代 VBA 的 ReplaceInfo）
-    Returns:
-        (bool, str, str): (成功/失败, 错误信息, 编辑后的值)
-    """
+'チェック処理メイン
+Private Function CheckMain(blnOpenFile As Boolean) As Boolean
+    On Error GoTo ErrHandler
+    Dim strFilter As String
+    Dim strOpenFilePath As String
+    Dim strWorkFilePath As String
+    Dim i As Integer
+    Dim varCol(255) As Variant
+    Dim blnSepTab As Boolean
+    Dim blnSepSemicolon As Boolean
+    Dim blnSepComma As Boolean
+    Dim blnSepSpace As Boolean
+    Dim blnSepOther As Boolean
+    Dim strSepOther As String
+    
+    '全設定シートを読み込む
+    If ReadAllSheet = False Then GoTo EndHandler
 
-    try:
-        attr = attribute_info[attr_index]
-        buf = str_value or ""
-        err_msg = ""
-        edit_value = ""
+    If blnOpenFile = True Then
+        'ファイル選択ダイアログを表示する
+        strFilter = "テキストファイル(*.csv,*.txt)" & vbNullChar & "*.csv;*.txt" & vbNullChar
+        strOpenFilePath = OpenFileDialog(ThisWorkbook.path, "ファイルを選択してください", strFilter)
+        If strOpenFilePath = "" Then
+            GoTo EndHandler
+        End If
+        
+        '選択されたファイルを拡張子"txt"のファイルとして作業ディレクトリへコピーする
+        '※拡張子"csv"のタブ区切りファイルがExcelの標準機能で読み込めないため
+        If objFso.FolderExists(ThisWorkbook.path & "\" & DIR_WORK) = False Then
+            '作業ディレクトリが存在しない場合は作成する
+            Call objFso.CreateFolder(ThisWorkbook.path & "\" & DIR_WORK)
+        End If
+        strWorkFilePath = ThisWorkbook.path & "\" & DIR_WORK & "\" & objFso.GetBaseName(strOpenFilePath) & ".txt"
+        Call objFso.CopyFile(strOpenFilePath, strWorkFilePath, True)
+        
+        'セパレータを決定する
+        Select Case MainInfo.TextSeparator
+        Case STR_TAB
+            blnSepTab = True
+        Case ";"
+            blnSepSemicolon = True
+        Case ","
+            blnSepComma = True
+        Case " "
+            blnSepSpace = True
+        Case Else
+            'その他の場合はセパレータを指定する
+            blnSepOther = True
+            strSepOther = MainInfo.TextSeparator
+        End Select
+        
+        'ファイルをテキスト形式でオープンする
+        For i = 0 To UBound(varCol)
+            varCol(i) = Array(i + 1, 2)
+        Next i
+        Workbooks.OpenText fileName:=strWorkFilePath, StartRow:=1, DataType:=xlDelimited, _
+                           TextQualifier:=xlDoubleQuote, ConsecutiveDelimiter:=False, _
+                           Tab:=blnSepTab, Semicolon:=blnSepSemicolon, Comma:=blnSepComma, Space:=blnSepSpace, _
+                           Other:=blnSepOther, OtherChar:=strSepOther, FieldInfo:=varCol
+    End If
+    
+    'シート上の属性値をチェックする
+    If CheckSheet = False Then GoTo EndHandler
+    'チェック処理後の属性情報をファイルに保存する
+    If SaveResultToFile = False Then GoTo EndHandler
+    '正常終了メッセージ
+    Call OutputMsg(MSG_202, MODE_DLG, "", vbInformation, APP_TITLE)
 
-        # --- 改行削除 ---
-        if attr.get("TrimCrLf"):
-            buf = buf.replace("\r", "").replace("\n", "")
+    CheckMain = True
+EndHandler:
+    On Error Resume Next
+    Exit Function
+ErrHandler:
+    Call OutputMsg(MSG_999, MODE_ALL, mModuleName & "#" & "CheckMain" & "#" & Err.number & "#" & Err.Description, vbCritical, APP_TITLE)
+    Resume EndHandler
+End Function
 
-        # --- スペース削除 ---
-        trim_mode = attr.get("TrimSpace")
-        if trim_mode == "TrimAll":
-            buf = buf.replace(" ", "")
-        elif trim_mode == "TrimBoth":
-            buf = buf.strip()
-        elif trim_mode == "TrimLeft":
-            buf = buf.lstrip()
-        elif trim_mode == "TrimRight":
-            buf = buf.rstrip()
-
-        # --- 必須チェック ---
-        if attr.get("Indispensable") and buf == "":
-            return False, "必須属性が未入力です。", ""
-
-        # --- 文字コードチェック ---
-        for ch in buf:
-            if not is_permitted_code(ch):
-                return False, f"使用不可文字[{ch}]が入力されています。", ""
-
-        # --- 属性の型による文字変換 ---
-        attr_type = attr.get("AttrType")
-        if attr_type == "IntegerNumber":
-            buf = to_half_width(buf)
-            if buf and (not buf.isdigit() or "," in buf or "." in buf):
-                return False, "数値以外または小数点/カンマが入力されています。", ""
-        elif attr_type == "SmallNumber":
-            buf = to_half_width(buf)
-            if buf and (not is_numeric(buf) or "," in buf):
-                return False, "数値以外が入力されています。", ""
-        elif attr_type == "Narrow":
-            buf = to_half_width(buf)
-            for ch in buf:
-                if not is_narrow(ch):
-                    return False, "半角対象文字以外が入力されています。", ""
-        elif attr_type == "Date":
-            date_str = get_date_str(buf, attr.get("DateFormat_In"))
-            if not date_str:
-                return False, "入力された日付の書式が不正です。", ""
-        else:
-            # --- 置換処理 ---
-            replaced = False
-            for r in replace_info:
-                if r["ReplaceMode"] == "Complete" and buf == r["KeyString"]:
-                    buf = r["ReplaceString"]
-                    replaced = True
-                    break
-
-            if not replaced:
-                work = ""
-                i = 0
-                while i < len(buf):
-                    ch = buf[i]
-                    matched = False
-                    for r in replace_info:
-                        if r["ReplaceMode"] == "Partial" and buf.startswith(r["KeyString"], i):
-                            work += r["ReplaceString"]
-                            i += len(r["KeyString"])
-                            matched = True
-                            break
-                    if not matched:
-                        if attr_type == "Wide":
-                            ch = to_wide(ch)
-                        elif attr_type == "Alphanumeric":
-                            ch = to_half_width(ch) if is_alphanumeric(ch) else to_wide(ch)
-                        elif attr_type == "NarrowKana":
-                            ch = narrow_kana_to_wide(ch)
-                        work += ch
-                        i += 1
-                buf = work
-
-        # --- バイト数加工 ---
-        byte_mode = attr.get("ByteEditMode")
-        left_size = attr.get("ByteSize_Left")
-        right_size = attr.get("ByteSize_Right")
-
-        if byte_mode == "Fixed":
-            if not is_complete_byte(buf, left_size, right_size):
-                return False, "入力された文字のバイト数が規定値と異なります。", ""
-        elif byte_mode == "Complete":
-            if not is_permitted_byte(buf, left_size, right_size):
-                return False, "入力された文字のバイト数が規定値を超えています。", ""
-            if attr_type == "Date":
-                buf = format_date(date_str, attr.get("DateFormat_Out"))
-            else:
-                buf = fill_string(buf, left_size, right_size, attr.get("CompleteChar"))
-        elif byte_mode == "Max":
-            if not is_permitted_byte(buf, left_size, right_size):
-                return False, "入力された文字のバイト数が規定値を超えています。", ""
-
-        # --- 大文字小文字統一 ---
-        letter_type = attr.get("LetterType")
-        if letter_type == "Capital":
-            buf = buf.upper()
-        elif letter_type == "Small":
-            buf = buf.lower()
-
-        return True, "", buf
-
-    except Exception as e:
-        # VBA の ErrHandler 相当
-        print(f"[Error] EditValue: {e}")
-        return False, str(e), ""
