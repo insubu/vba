@@ -1,83 +1,109 @@
-from enum import Enum
+'作業シートを作成する
+Private Function MakeWorkSheet() As Boolean
+    On Error GoTo ErrHandler
+    Dim i As Long
+    Dim lngCol As Long
+    Dim lngColMax As Long
+    Dim strBuf As String
 
-class ReplaceMode(Enum):
-    Complete = 0    # 完全一致
-    Partial = 1     # 文字列一致
+    If Application.Workbooks.Count = 1 Then
+        '開いているブックが1つしかない場合はエラー
+        Call OutputMsg(MSG_101, MODE_DLG, "", vbExclamation, APP_TITLE)
+        GoTo EndHandler
+    End If
+    If ActiveWorkbook.Name = ThisWorkbook.Name Then
+        'アクティブなブックが自分自身の場合はエラー
+        Call OutputMsg(MSG_102, MODE_DLG, "", vbExclamation, APP_TITLE)
+        GoTo EndHandler
+    End If
+    '処理対象ブックをセットする
+    Set bokTarget = ActiveWorkbook
+    
+    If bokTarget.path = "" And MainInfo.SaveDirPath = "" Then
+        'ブックが一時ファイルでファイル保存先が未指定の場合はエラー
+        Call OutputMsg(MSG_105, MODE_DLG, "", vbExclamation, APP_TITLE)
+        GoTo EndHandler
+    End If
+        
+    '処理対象シートをセットする（とりあえず）
+    Set shtTarget = bokTarget.ActiveSheet
+    
+    'シート数分繰り返す
+    For i = 1 To bokTarget.Worksheets.Count
+        If bokTarget.Worksheets(i).Name = shtTarget.Name & "_" & WORK_SHEET_TAG Then
+            '既に作業シートが存在する場合は再実行確認ダイアログを表示する
+            If OutputMsg(MSG_103, MODE_DLG, "", vbQuestion + vbOKCancel, APP_TITLE) = vbCancel Then
+                '処理中止
+                GoTo EndHandler
+            End If
+            '作業シートを削除する
+            If DeleteSheet(bokTarget, bokTarget.Worksheets(i).Name) = False Then GoTo EndHandler
+            Exit For
+        End If
+    Next i
+    
+    '処理対象シートを作業シートとしてコピーする（以降このシートを処理対象とする）
+    If CopySheet(bokTarget, shtTarget.Name, shtTarget.Name & "_" & WORK_SHEET_TAG) = False Then GoTo EndHandler
+    Set shtTarget = bokTarget.Worksheets(bokTarget.Worksheets.Count)
+        
+    'ヘッダ行追加
+    If MainInfo.OriginCell.AddHeader = True Then
+        'データ開始行の位置に空白行を挿入する
+        shtTarget.Rows(MainInfo.OriginCell.Row).Insert
+        '属性情報数分繰り返す
+        For i = 0 To AttributeInfoCount - 1
+            '属性名をヘッダ行の該当する位置に記述する
+            shtTarget.Cells(MainInfo.OriginCell.Row, MainInfo.OriginCell.Col + AttributeInfo(i).ColPos - 1).value = AttributeInfo(i).AttrName
+        Next i
+    End If
+    
+    '余白削除
+    If MainInfo.OriginCell.DeleteUpperRow = True Then
+        If MainInfo.OriginCell.Row > 1 Then
+            'データ開始行より上の行を削除する（以降１行目をデータ開始行とする）
+            shtTarget.Range(shtTarget.Rows(1), shtTarget.Rows(MainInfo.OriginCell.Row - 1)).Delete
+            MainInfo.OriginCell.Row = 1
+        End If
+        If MainInfo.OriginCell.Col > 1 Then
+            'データ開始列より左の列を削除する（以降１列目をデータ開始列とする）
+            shtTarget.Range(shtTarget.Columns(1), shtTarget.Columns(MainInfo.OriginCell.Col - 1)).Delete
+            MainInfo.OriginCell.Col = 1
+        End If
+    End If
+    
+    'ヘッダの改行・スペース削除
+'***** 2005/3/31 y.yamada upd-str
+'    lngColMax = shtTarget.Cells(MainInfo.OriginCell.Row, Columns.Count).End(xlToLeft).Column
+    lngColMax = shtTarget.UsedRange.Columns.Count
+'***** 2005/3/31 y.yamada upd-end
+    '列数分繰り返す
+    For lngCol = MainInfo.OriginCell.Col To lngColMax
+        strBuf = shtTarget.Cells(MainInfo.OriginCell.Row, lngCol).value
+        '改行を削除する
+        If MainInfo.TrimHeaderCrLf = True Then
+            strBuf = Replace(strBuf, vbCr, "")
+            strBuf = Replace(strBuf, vbLf, "")
+        End If
+        'スペースを削除する
+        Select Case MainInfo.TrimHeaderSpace
+        Case enumTrimSpaceMode.TrimAll
+            strBuf = Replace(strBuf, " ", "")
+        Case enumTrimSpaceMode.TrimBoth
+            strBuf = Trim(strBuf)
+        Case enumTrimSpaceMode.TrimLeft
+            strBuf = LTrim(strBuf)
+        Case enumTrimSpaceMode.TrimRight
+            strBuf = RTrim(strBuf)
+        End Select
+        shtTarget.Cells(MainInfo.OriginCell.Row, lngCol).value = strBuf
+    Next lngCol
+    
+    MakeWorkSheet = True
+EndHandler:
+    On Error Resume Next
+    Exit Function
+ErrHandler:
+    Call OutputMsg(MSG_999, MODE_ALL, mModuleName & "#" & "MakeWorkSheet" & "#" & Err.number & "#" & Err.Description, vbCritical, APP_TITLE)
+    Resume EndHandler
+End Function
 
-
-class ReplaceInfoItem:
-    def __init__(self, key_string="", replace_string="", replace_mode=None):
-        self.KeyString = key_string
-        self.ReplaceString = replace_string
-        self.ReplaceMode = replace_mode
-
-
-def read_replace_sheet(sheet):
-    """
-    置換シートを読み込む
-    Returns: bool
-    """
-    replace_info_list = []
-    try:
-        # used range rows count equivalent
-        row_max = sheet.used_range_last_row()  # ← implement this for your environment
-
-        for row in range(3, row_max + 1):
-            # === 変換前 ===
-            key_col = "変換前"
-            key_str = read_csv_sheet(sheet, key_col, row)
-            if not key_str:
-                # 未入力の場合は有効行でないと判断
-                break
-
-            # === 変換後 ===
-            replace_col = "変換後"
-            replace_str = read_csv_sheet(sheet, replace_col, row)
-            if not replace_str:
-                show_ini_sheet(sheet)
-                output_msg("MSG_002", "MODE_ALL", f"{sheet.name}#{replace_col}#{row}")
-                return False
-
-            # === 完全一致 / 文字列一致 ===
-            match_col = "完全一致"
-            mode_str = read_csv_sheet(sheet, match_col, row).upper()
-            if mode_str == "完全一致":
-                mode = ReplaceMode.Complete
-            elif mode_str == "文字列一致":
-                mode = ReplaceMode.Partial
-            else:
-                show_ini_sheet(sheet)
-                output_msg("MSG_002", "MODE_ALL", f"{sheet.name}#{match_col}#{row}")
-                return False
-
-            new_item = ReplaceInfoItem(key_str, replace_str, mode)
-
-            # === 整合性チェック ===
-            for existing in replace_info_list:
-                # [変換前]重複チェック
-                if (existing.ReplaceMode == ReplaceMode.Partial or
-                    new_item.ReplaceMode == ReplaceMode.Partial):
-                    if (existing.KeyString in new_item.KeyString or
-                        new_item.KeyString in existing.KeyString):
-                        show_ini_sheet(sheet)
-                        output_msg("MSG_003", "MODE_ALL",
-                                   f"{sheet.name}#変換前#{row}")
-                        return False
-
-                # 循環参照チェック
-                if (new_item.ReplaceString == existing.KeyString and
-                    new_item.KeyString == existing.ReplaceString):
-                    show_ini_sheet(sheet)
-                    output_msg("MSG_004", "MODE_ALL",
-                               f"{sheet.name}#変換後#{row}")
-                    return False
-
-            replace_info_list.append(new_item)
-
-        return True
-
-    except Exception as e:
-        # corresponds to ErrHandler
-        output_msg("MSG_999", "MODE_ALL",
-                   f"ReadReplaceSheet#{type(e).__name__}#{str(e)}")
-        return False
