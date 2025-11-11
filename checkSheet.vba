@@ -1,82 +1,98 @@
-import win32com.client as win32
-
-def make_worksheet(main_info, attribute_info, work_tag="_WORK"):
-    """
-    main_info: object with OriginCell, SaveDirPath, TrimHeaderCrLf, TrimHeaderSpace, etc.
-    attribute_info: list of objects/dicts with AttrName, ColPos
-    """
-    excel = win32.Dispatch("Excel.Application")
-    excel.Visible = True  # Optional: True to see the operations
+'シート上の属性値をチェックする
+Private Function CheckSheet() As Boolean
+    On Error GoTo ErrHandler
+    Dim lngRow As Long
+    Dim lngRowMax As Long
+    Dim lngCol As Long
+    Dim lngColMax As Long
+    Dim lngColResult As Long
+    Dim strHeader As String
+    Dim strData As String
+    Dim strBuf As String
+    Dim strErrMsg As String
+    Dim lngAttributeInfoIndex As Long
+    Dim blnErrFlag As Boolean
+    Dim lngDataNumber As Long
     
-    # --- 1. Get active workbook ---
-    if excel.Workbooks.Count <= 1:
-        raise RuntimeError("Only one workbook open, cannot process.")
+    Application.Cursor = xlWait
+    Application.ScreenUpdating = False
     
-    wb_target = excel.ActiveWorkbook
+    '作業シートを作成する（以降このシートを処理対象とする）
+    If MakeWorkSheet = False Then GoTo EndHandler
     
-    # --- 2. Check save path ---
-    if not wb_target.Path and not getattr(main_info, "SaveDirPath", ""):
-        raise RuntimeError("No save path defined.")
+    '処理対象シートの最終行列を取得する
+'***** 2005/3/31 y.yamada upd-str
+'    lngRowMax = shtTarget.Cells(Rows.Count, MainInfo.OriginCell.Col).End(xlUp).Row
+'    lngColMax = shtTarget.Cells(MainInfo.OriginCell.Row, Columns.Count).End(xlToLeft).Column
+    lngRowMax = shtTarget.UsedRange.Rows.Count
+    lngColMax = shtTarget.UsedRange.Columns.Count
+'***** 2005/3/31 y.yamada upd-end
     
-    # --- 3. Get active sheet ---
-    ws_target = wb_target.ActiveSheet
-    work_name = f"{ws_target.Name}{work_tag}"
+    '最終列に処理結果列を作成する
+    lngColResult = lngColMax + 1
+    shtTarget.Cells(MainInfo.OriginCell.Row, lngColResult).value = MainInfo.ResultHeadrName
     
-    # --- 4. Delete existing work sheet if exists ---
-    for ws in wb_target.Worksheets:
-        if ws.Name == work_name:
-            response = excel.Application.InputBox(
-                "Work sheet exists. OK to recreate?", "Confirm", Type=1
-            )
-            # Cancel (or No) behavior can be added if needed
-            ws.Delete()
-            break
+    '行数分繰り返す
+    For lngRow = MainInfo.OriginCell.Row + 1 To lngRowMax
+        '処理経過を表示する
+        lngDataNumber = lngDataNumber + 1
+        Application.StatusBar = APP_TITLE & " " & "処理中です...[" & CStr(lngDataNumber) & "/" & CStr(lngRowMax - MainInfo.OriginCell.Row) & "件]"
+        
+        '列数分繰り返す
+        For lngCol = MainInfo.OriginCell.Col To lngColMax
+            'ヘッダとデータを取得する
+            strHeader = shtTarget.Cells(MainInfo.OriginCell.Row, lngCol).value
+            strData = shtTarget.Cells(lngRow, lngCol).value
+            
+            '属性名をキーとして属性情報におけるインデックスを取得する
+            lngAttributeInfoIndex = GetAttributeInfoIndex(strHeader)
+            If lngAttributeInfoIndex = -1 Then
+                '属性未定義エラー
+                Call OutputMsg(MSG_104, MODE_DLG, strHeader, vbExclamation, APP_TITLE)
+                GoTo EndHandler
+            End If
+            
+            '値を編集する
+            If EditValue(strData, lngAttributeInfoIndex, strErrMsg, strBuf) = False Then
+                '編集エラー
+                '　エラーセルに色を付ける
+                shtTarget.Cells(lngRow, lngCol).Interior.ColorIndex = MainInfo.ErrCellColor
+                '　処理結果列にエラーメッセージを表示する
+                shtTarget.Cells(lngRow, lngColResult).value = RESULT_NG & " [" & strHeader & ":" & strErrMsg & "]"
+                blnErrFlag = True   'エラー存在フラグON
+                '　次の行へ
+                Exit For
+            End If
+            If strData <> strBuf Then
+                '編集されたセルに色を付ける
+                shtTarget.Cells(lngRow, lngCol).Interior.ColorIndex = MainInfo.EditCellColor
+                shtTarget.Cells(lngRow, lngCol).value = strBuf
+            End If
+        Next lngCol
+        If lngCol = lngColMax + 1 Then
+            '全列処理できた場合は正常終了
+            shtTarget.Cells(lngRow, lngColResult).value = RESULT_OK
+        End If
+    Next lngRow
     
-    # --- 5. Copy sheet ---
-    ws_target.Copy(After=wb_target.Sheets(wb_target.Sheets.Count))
-    ws_work = wb_target.Sheets(wb_target.Sheets.Count)
-    ws_work.Name = work_name
+    Application.StatusBar = False
+    Application.ScreenUpdating = True
     
-    # --- 6. Insert header row if needed ---
-    if main_info.OriginCell.AddHeader:
-        row = main_info.OriginCell.Row
-        col = main_info.OriginCell.Col
-        ws_work.Rows(row).Insert()
-        for attr in attribute_info:
-            ws_work.Cells(row, col + attr.ColPos - 1).Value = attr.AttrName
+    If blnErrFlag = True Then
+        '１つでもエラーが存在する場合は確認ダイアログを表示する
+        Call OutputMsg(MSG_201, MODE_DLG, "", vbExclamation, APP_TITLE)
+        GoTo EndHandler
+    End If
     
-    # --- 7. Delete upper rows / left columns if needed ---
-    if main_info.OriginCell.DeleteUpperRow:
-        if main_info.OriginCell.Row > 1:
-            ws_work.Range(ws_work.Rows(1), ws_work.Rows(main_info.OriginCell.Row - 1)).Delete()
-            main_info.OriginCell.Row = 1
-        if main_info.OriginCell.Col > 1:
-            ws_work.Range(ws_work.Columns(1), ws_work.Columns(main_info.OriginCell.Col - 1)).Delete()
-            main_info.OriginCell.Col = 1
+    CheckSheet = True
+EndHandler:
+    On Error Resume Next
+    Application.Cursor = xlDefault
+    Application.ScreenUpdating = True
+    Application.StatusBar = False
+    Exit Function
+ErrHandler:
+    Call OutputMsg(MSG_999, MODE_ALL, mModuleName & "#" & "CheckSheet" & "#" & Err.number & "#" & Err.Description, vbCritical, APP_TITLE)
+    Resume EndHandler
+End Function
     
-    # --- 8. Trim header row ---
-    row = main_info.OriginCell.Row
-    max_col = ws_work.UsedRange.Columns.Count
-    
-    for col in range(main_info.OriginCell.Col, max_col + 1):
-        val = ws_work.Cells(row, col).Value
-        if isinstance(val, str):
-            # Remove line breaks
-            if main_info.TrimHeaderCrLf:
-                val = val.replace("\r", "").replace("\n", "")
-            # Remove spaces
-            trim_mode = getattr(main_info, "TrimHeaderSpace", "TrimBoth")
-            if trim_mode == "TrimAll":
-                val = val.replace(" ", "")
-            elif trim_mode == "TrimBoth":
-                val = val.strip()
-            elif trim_mode == "TrimLeft":
-                val = val.lstrip()
-            elif trim_mode == "TrimRight":
-                val = val.rstrip()
-            ws_work.Cells(row, col).Value = val
-    
-    # --- Optional: Save workbook ---
-    # wb_target.Save()  # or SaveAs to new path
-    
-    return True
