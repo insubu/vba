@@ -1,185 +1,192 @@
-from dataclasses import dataclass, field
-from enum import Enum
+'属性シートを読み込む
+Public Function ReadAttributeSheet() As Boolean
+    On Error GoTo ErrHandler
+    Dim strKey As String
+    Dim strBuf As String
+    Dim lngRow As Long
+    Dim lngRowMax As Long
+        
+    '初期化
+    Erase AttributeInfo
+    AttributeInfoCount = 0
+        
+'***** 2005/3/31 y.yamada upd-str
+'    lngRowMax = shtAttribute.Cells(Rows.Count, 1).End(xlUp).Row
+    lngRowMax = shtAttribute.UsedRange.Rows.Count
+'***** 2005/3/31 y.yamada upd-end
+    
+    'シートの行数分繰り返す
+    For lngRow = 3 To lngRowMax
+        ReDim Preserve AttributeInfo(AttributeInfoCount)
+        
+        '設定内容をチェックする
+        '　属性名
+        strKey = "属性名"
+        strBuf = ReadCsvSheet(shtAttribute, strKey, lngRow)
+        If strBuf = "" Then
+'***** 2005/3/31 y.yamada upd-str
+'            GoTo IniErrHandler
+            '未入力の場合は有効行でないと判断する
+            Exit For
+'***** 2005/3/31 y.yamada upd-end
+        End If
+        AttributeInfo(AttributeInfoCount).AttrName = strBuf
+        '　属性位置
+        strKey = "属性位置"
+        strBuf = ReadCsvSheet(shtAttribute, strKey, lngRow)
+        If MainInfo.OriginCell.AddHeader = True Then
+            'ヘッダ追加モードの場合のみ
+            If strBuf = "" Then
+                GoTo IniErrHandler
+            End If
+            If IsNumeric(strBuf) = False Then
+                GoTo IniErrHandler
+            End If
+            AttributeInfo(AttributeInfoCount).ColPos = CInt(strBuf)
+        End If
+        '　必須
+        strKey = "必須"
+        strBuf = ReadCsvSheet(shtAttribute, strKey, lngRow)
+        Select Case UCase(strBuf)
+        Case "Y"
+            AttributeInfo(AttributeInfoCount).Indispensable = True
+        Case "N"
+            AttributeInfo(AttributeInfoCount).Indispensable = False
+        Case Else
+            GoTo IniErrHandler
+        End Select
+        '　属性の型
+        strKey = "型"
+        strBuf = ReadCsvSheet(shtAttribute, strKey, lngRow)
+        Select Case strBuf
+        Case ""
+            AttributeInfo(AttributeInfoCount).AttrType = enumAttributeType.Non
+        Case "半角"
+            AttributeInfo(AttributeInfoCount).AttrType = enumAttributeType.Narrow
+        Case "全角"
+            AttributeInfo(AttributeInfoCount).AttrType = enumAttributeType.Wide
+        Case "英数字"
+            AttributeInfo(AttributeInfoCount).AttrType = enumAttributeType.Alphanumeric
+        Case "半角カナ"
+            AttributeInfo(AttributeInfoCount).AttrType = enumAttributeType.NarrowKana
+        Case "整数"
+            AttributeInfo(AttributeInfoCount).AttrType = enumAttributeType.IntegerNumber
+        Case "小数"
+            AttributeInfo(AttributeInfoCount).AttrType = enumAttributeType.SmallNumber
+        Case Else
+            If strBuf Like "日付:*" Then
+                AttributeInfo(AttributeInfoCount).AttrType = enumAttributeType.Date
+                AttributeInfo(AttributeInfoCount).DateFormat_In = Mid(strBuf, InStr(strBuf, ":") + 1)
+            Else
+                GoTo IniErrHandler
+            End If
+        End Select
+        '　文字の型
+        strKey = "大文字/小文字"
+        strBuf = ReadCsvSheet(shtAttribute, strKey, lngRow)
+        Select Case strBuf
+        Case ""
+            AttributeInfo(AttributeInfoCount).LetterType = enumLetterType.Non
+        Case "大文字"
+            AttributeInfo(AttributeInfoCount).LetterType = enumLetterType.Capital
+        Case "小文字"
+            AttributeInfo(AttributeInfoCount).LetterType = enumLetterType.Small
+        Case Else
+            GoTo IniErrHandler
+        End Select
+        '　バイト数
+        strKey = "バイト数"
+        strBuf = ReadCsvSheet(shtAttribute, strKey, lngRow)
+        If strBuf <> "" Then
+            If IsNumeric(strBuf) = False Then
+                GoTo IniErrHandler
+            End If
+            If CInt(strBuf) < 1 Then
+                GoTo IniErrHandler
+            End If
+            If InStr(strBuf, ".") <> 0 Then
+                AttributeInfo(AttributeInfoCount).ByteSize_Left = CInt(Left(strBuf, InStr(strBuf, ".") - 1))
+                AttributeInfo(AttributeInfoCount).ByteSize_Right = CInt(Mid(strBuf, InStr(strBuf, ".") + 1))
+            Else
+                AttributeInfo(AttributeInfoCount).ByteSize_Left = CInt(strBuf)
+            End If
+        End If
+        '　バイト数加工
+        strKey = "バイト数加工"
+        strBuf = ReadCsvSheet(shtAttribute, strKey, lngRow)
+        Select Case strBuf
+        Case ""
+            AttributeInfo(AttributeInfoCount).ByteEditMode = enumByteEditMode.Non
+        Case "固定"
+            AttributeInfo(AttributeInfoCount).ByteEditMode = enumByteEditMode.Fixed
+        Case "最大"
+            AttributeInfo(AttributeInfoCount).ByteEditMode = enumByteEditMode.Max
+        Case Else
+            If strBuf Like "補完:*" Then
+                AttributeInfo(AttributeInfoCount).ByteEditMode = enumByteEditMode.Complete
+                Select Case AttributeInfo(AttributeInfoCount).AttrType
+                Case enumAttributeType.Date
+                    AttributeInfo(AttributeInfoCount).DateFormat_Out = Mid(strBuf, InStr(strBuf, ":") + 1)
+                Case enumAttributeType.IntegerNumber, enumAttributeType.SmallNumber
+                    Select Case Mid(strBuf, InStr(strBuf, ":") + 1)
+                    Case "0", " "
+                        AttributeInfo(AttributeInfoCount).CompleteChar = Mid(strBuf, InStr(strBuf, ":") + 1)
+                    Case Else
+                        GoTo IniErrHandler
+                    End Select
+                Case Else
+                    If Len(Mid(strBuf, InStr(strBuf, ":") + 1)) > 1 Then
+                        GoTo IniErrHandler
+                    End If
+                    AttributeInfo(AttributeInfoCount).CompleteChar = Mid(strBuf, InStr(strBuf, ":") + 1)
+                End Select
+            Else
+                GoTo IniErrHandler
+            End If
+        End Select
+        '　スペース削除
+        strKey = "スペース削除"
+        strBuf = ReadCsvSheet(shtAttribute, strKey, lngRow)
+        Select Case strBuf
+        Case ""
+            AttributeInfo(AttributeInfoCount).TrimSpace = enumTrimSpaceMode.Non
+        Case "全て"
+            AttributeInfo(AttributeInfoCount).TrimSpace = enumTrimSpaceMode.TrimAll
+        Case "前方"
+            AttributeInfo(AttributeInfoCount).TrimSpace = enumTrimSpaceMode.TrimLeft
+        Case "後方"
+            AttributeInfo(AttributeInfoCount).TrimSpace = enumTrimSpaceMode.TrimRight
+        Case "両端"
+            AttributeInfo(AttributeInfoCount).TrimSpace = enumTrimSpaceMode.TrimBoth
+        Case Else
+            GoTo IniErrHandler
+        End Select
+        '　改行削除
+        strKey = "改行削除"
+        strBuf = ReadCsvSheet(shtAttribute, strKey, lngRow)
+        Select Case UCase(strBuf)
+        Case "Y"
+            AttributeInfo(AttributeInfoCount).TrimCrLf = True
+        Case "N"
+            AttributeInfo(AttributeInfoCount).TrimCrLf = False
+        Case Else
+            GoTo IniErrHandler
+        End Select
+        
+        AttributeInfoCount = AttributeInfoCount + 1
+    Next lngRow
+    
+    ReadAttributeSheet = True
+EndHandler:
+    On Error Resume Next
+    Exit Function
+IniErrHandler:      '設定エラー
+    'シートをアクティブにする
+    Call ShowIniSheet(shtAttribute)
+    Call OutputMsg(MSG_002, MODE_ALL, shtAttribute.Name & "#" & strKey & "#" & CStr(lngRow), vbCritical, APP_TITLE)
+    GoTo EndHandler
+ErrHandler:
+    Call OutputMsg(MSG_999, MODE_ALL, mModuleName & "#" & "ReadAttributeSheet" & "#" & Err.number & "#" & Err.Description, vbCritical, APP_TITLE)
+    Resume EndHandler
+End Function
 
-
-# --- ENUM DEFINITIONS (VBA equivalents) ---
-
-class AttributeType(Enum):
-    Non = 0
-    Narrow = 1
-    Wide = 2
-    Alphanumeric = 3
-    NarrowKana = 4
-    IntegerNumber = 5
-    SmallNumber = 6
-    Date = 7
-
-
-class LetterType(Enum):
-    Non = 0
-    Capital = 1
-    Small = 2
-
-
-class ByteEditMode(Enum):
-    Non = 0
-    Fixed = 1
-    Max = 2
-    Complete = 3
-
-
-class TrimSpaceMode(Enum):
-    Non = 0
-    TrimAll = 1
-    TrimLeft = 2
-    TrimRight = 3
-    TrimBoth = 4
-
-
-# --- ATTRIBUTE INFO STRUCTURE ---
-
-@dataclass
-class AttributeInfoItem:
-    AttrName: str = ""
-    ColPos: int = 0
-    Indispensable: bool = False
-    AttrType: AttributeType = AttributeType.Non
-    DateFormat_In: str = ""
-    DateFormat_Out: str = ""
-    LetterType: LetterType = LetterType.Non
-    ByteSize_Left: int = 0
-    ByteSize_Right: int = 0
-    ByteEditMode: ByteEditMode = ByteEditMode.Non
-    CompleteChar: str = ""
-    TrimSpace: TrimSpaceMode = TrimSpaceMode.Non
-    TrimCrLf: bool = False
-
-
-# --- CORE FUNCTION ---
-
-def read_attribute_sheet(
-    read_func,          # like ReadCsvSheet(sheet, key, row)
-    show_func,          # like ShowIniSheet(sheet)
-    msg_func,           # like OutputMsg()
-    sheet_name: str,
-    max_rows: int,
-    add_header_mode: bool
-) -> list[AttributeInfoItem] | None:
-    """
-    Reads attribute sheet definitions from a source function.
-
-    Args:
-        read_func: callable(sheet_name, key, row) -> str
-        show_func: callable(sheet_name)
-        msg_func: callable(message)
-        sheet_name: sheet name (for error message)
-        max_rows: number of rows to process
-        add_header_mode: bool (from MainInfo.OriginCell.AddHeader)
-
-    Returns:
-        list[AttributeInfoItem] or None if error
-    """
-    attrs: list[AttributeInfoItem] = []
-    try:
-        for row in range(3, max_rows + 1):
-            # --- 属性名 ---
-            key = "属性名"
-            buf = read_func(sheet_name, key, row)
-            if not buf:
-                # 空白行なら終了（=有効行終了）
-                break
-            attr = AttributeInfoItem(AttrName=buf)
-
-            # --- 属性位置 ---
-            key = "属性位置"
-            buf = read_func(sheet_name, key, row)
-            if add_header_mode:
-                if not buf.isdigit():
-                    raise ValueError(f"Invalid column position '{buf}' at row {row}")
-                attr.ColPos = int(buf)
-
-            # --- 必須 ---
-            key = "必須"
-            buf = read_func(sheet_name, key, row).upper()
-            if buf == "Y":
-                attr.Indispensable = True
-            elif buf == "N":
-                attr.Indispensable = False
-            else:
-                raise ValueError(f"Invalid 必須 flag '{buf}'")
-
-            # --- 型 ---
-            key = "型"
-            buf = read_func(sheet_name, key, row)
-            attr.AttrType, attr.DateFormat_In = parse_attr_type(buf)
-
-            # --- 大文字/小文字 ---
-            key = "大文字/小文字"
-            buf = read_func(sheet_name, key, row)
-            attr.LetterType = {
-                "": LetterType.Non,
-                "大文字": LetterType.Capital,
-                "小文字": LetterType.Small
-            }.get(buf, None)
-            if attr.LetterType is None:
-                raise ValueError(f"Invalid 大文字/小文字 '{buf}'")
-
-            # --- バイト数 ---
-            key = "バイト数"
-            buf = read_func(sheet_name, key, row)
-            if buf:
-                if not is_number_format(buf):
-                    raise ValueError(f"Invalid バイト数 '{buf}'")
-                if "." in buf:
-                    left, right = buf.split(".", 1)
-                    attr.ByteSize_Left = int(left)
-                    attr.ByteSize_Right = int(right)
-                else:
-                    attr.ByteSize_Left = int(buf)
-
-            # --- バイト数加工 ---
-            key = "バイト数加工"
-            buf = read_func(sheet_name, key, row)
-            if buf:
-                parse_byte_edit_mode(attr, buf)
-
-            # --- スペース削除 ---
-            key = "スペース削除"
-            buf = read_func(sheet_name, key, row)
-            trim_map = {
-                "": TrimSpaceMode.Non,
-                "全て": TrimSpaceMode.TrimAll,
-                "前方": TrimSpaceMode.TrimLeft,
-                "後方": TrimSpaceMode.TrimRight,
-                "両端": TrimSpaceMode.TrimBoth,
-            }
-            if buf not in trim_map:
-                raise ValueError(f"Invalid スペース削除 '{buf}'")
-            attr.TrimSpace = trim_map[buf]
-
-            # --- 改行削除 ---
-            key = "改行削除"
-            buf = read_func(sheet_name, key, row).upper()
-            if buf == "Y":
-                attr.TrimCrLf = True
-            elif buf == "N":
-                attr.TrimCrLf = False
-            else:
-                raise ValueError(f"Invalid 改行削除 '{buf}'")
-
-            attrs.append(attr)
-
-        return attrs
-
-    except Exception as e:
-        show_func(sheet_name)
-        msg_func(f"設定エラー: {sheet_name}#{key}#{row} - {e}")
-        return None
-
-
-# --- HELPER FUNCTIONS ---
-
-def parse_attr_type(buf: str):
-    """Return (AttributeType, DateFormat_In)"""
-    if not buf:
-        return AttributeType.Non, ""
