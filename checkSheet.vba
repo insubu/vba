@@ -1,109 +1,82 @@
-'作業シートを作成する
-Private Function MakeWorkSheet() As Boolean
-    On Error GoTo ErrHandler
-    Dim i As Long
-    Dim lngCol As Long
-    Dim lngColMax As Long
-    Dim strBuf As String
+import win32com.client as win32
 
-    If Application.Workbooks.Count = 1 Then
-        '開いているブックが1つしかない場合はエラー
-        Call OutputMsg(MSG_101, MODE_DLG, "", vbExclamation, APP_TITLE)
-        GoTo EndHandler
-    End If
-    If ActiveWorkbook.Name = ThisWorkbook.Name Then
-        'アクティブなブックが自分自身の場合はエラー
-        Call OutputMsg(MSG_102, MODE_DLG, "", vbExclamation, APP_TITLE)
-        GoTo EndHandler
-    End If
-    '処理対象ブックをセットする
-    Set bokTarget = ActiveWorkbook
+def make_worksheet(main_info, attribute_info, work_tag="_WORK"):
+    """
+    main_info: object with OriginCell, SaveDirPath, TrimHeaderCrLf, TrimHeaderSpace, etc.
+    attribute_info: list of objects/dicts with AttrName, ColPos
+    """
+    excel = win32.Dispatch("Excel.Application")
+    excel.Visible = True  # Optional: True to see the operations
     
-    If bokTarget.path = "" And MainInfo.SaveDirPath = "" Then
-        'ブックが一時ファイルでファイル保存先が未指定の場合はエラー
-        Call OutputMsg(MSG_105, MODE_DLG, "", vbExclamation, APP_TITLE)
-        GoTo EndHandler
-    End If
-        
-    '処理対象シートをセットする（とりあえず）
-    Set shtTarget = bokTarget.ActiveSheet
+    # --- 1. Get active workbook ---
+    if excel.Workbooks.Count <= 1:
+        raise RuntimeError("Only one workbook open, cannot process.")
     
-    'シート数分繰り返す
-    For i = 1 To bokTarget.Worksheets.Count
-        If bokTarget.Worksheets(i).Name = shtTarget.Name & "_" & WORK_SHEET_TAG Then
-            '既に作業シートが存在する場合は再実行確認ダイアログを表示する
-            If OutputMsg(MSG_103, MODE_DLG, "", vbQuestion + vbOKCancel, APP_TITLE) = vbCancel Then
-                '処理中止
-                GoTo EndHandler
-            End If
-            '作業シートを削除する
-            If DeleteSheet(bokTarget, bokTarget.Worksheets(i).Name) = False Then GoTo EndHandler
-            Exit For
-        End If
-    Next i
+    wb_target = excel.ActiveWorkbook
     
-    '処理対象シートを作業シートとしてコピーする（以降このシートを処理対象とする）
-    If CopySheet(bokTarget, shtTarget.Name, shtTarget.Name & "_" & WORK_SHEET_TAG) = False Then GoTo EndHandler
-    Set shtTarget = bokTarget.Worksheets(bokTarget.Worksheets.Count)
-        
-    'ヘッダ行追加
-    If MainInfo.OriginCell.AddHeader = True Then
-        'データ開始行の位置に空白行を挿入する
-        shtTarget.Rows(MainInfo.OriginCell.Row).Insert
-        '属性情報数分繰り返す
-        For i = 0 To AttributeInfoCount - 1
-            '属性名をヘッダ行の該当する位置に記述する
-            shtTarget.Cells(MainInfo.OriginCell.Row, MainInfo.OriginCell.Col + AttributeInfo(i).ColPos - 1).value = AttributeInfo(i).AttrName
-        Next i
-    End If
+    # --- 2. Check save path ---
+    if not wb_target.Path and not getattr(main_info, "SaveDirPath", ""):
+        raise RuntimeError("No save path defined.")
     
-    '余白削除
-    If MainInfo.OriginCell.DeleteUpperRow = True Then
-        If MainInfo.OriginCell.Row > 1 Then
-            'データ開始行より上の行を削除する（以降１行目をデータ開始行とする）
-            shtTarget.Range(shtTarget.Rows(1), shtTarget.Rows(MainInfo.OriginCell.Row - 1)).Delete
-            MainInfo.OriginCell.Row = 1
-        End If
-        If MainInfo.OriginCell.Col > 1 Then
-            'データ開始列より左の列を削除する（以降１列目をデータ開始列とする）
-            shtTarget.Range(shtTarget.Columns(1), shtTarget.Columns(MainInfo.OriginCell.Col - 1)).Delete
-            MainInfo.OriginCell.Col = 1
-        End If
-    End If
+    # --- 3. Get active sheet ---
+    ws_target = wb_target.ActiveSheet
+    work_name = f"{ws_target.Name}{work_tag}"
     
-    'ヘッダの改行・スペース削除
-'***** 2005/3/31 y.yamada upd-str
-'    lngColMax = shtTarget.Cells(MainInfo.OriginCell.Row, Columns.Count).End(xlToLeft).Column
-    lngColMax = shtTarget.UsedRange.Columns.Count
-'***** 2005/3/31 y.yamada upd-end
-    '列数分繰り返す
-    For lngCol = MainInfo.OriginCell.Col To lngColMax
-        strBuf = shtTarget.Cells(MainInfo.OriginCell.Row, lngCol).value
-        '改行を削除する
-        If MainInfo.TrimHeaderCrLf = True Then
-            strBuf = Replace(strBuf, vbCr, "")
-            strBuf = Replace(strBuf, vbLf, "")
-        End If
-        'スペースを削除する
-        Select Case MainInfo.TrimHeaderSpace
-        Case enumTrimSpaceMode.TrimAll
-            strBuf = Replace(strBuf, " ", "")
-        Case enumTrimSpaceMode.TrimBoth
-            strBuf = Trim(strBuf)
-        Case enumTrimSpaceMode.TrimLeft
-            strBuf = LTrim(strBuf)
-        Case enumTrimSpaceMode.TrimRight
-            strBuf = RTrim(strBuf)
-        End Select
-        shtTarget.Cells(MainInfo.OriginCell.Row, lngCol).value = strBuf
-    Next lngCol
+    # --- 4. Delete existing work sheet if exists ---
+    for ws in wb_target.Worksheets:
+        if ws.Name == work_name:
+            response = excel.Application.InputBox(
+                "Work sheet exists. OK to recreate?", "Confirm", Type=1
+            )
+            # Cancel (or No) behavior can be added if needed
+            ws.Delete()
+            break
     
-    MakeWorkSheet = True
-EndHandler:
-    On Error Resume Next
-    Exit Function
-ErrHandler:
-    Call OutputMsg(MSG_999, MODE_ALL, mModuleName & "#" & "MakeWorkSheet" & "#" & Err.number & "#" & Err.Description, vbCritical, APP_TITLE)
-    Resume EndHandler
-End Function
-
+    # --- 5. Copy sheet ---
+    ws_target.Copy(After=wb_target.Sheets(wb_target.Sheets.Count))
+    ws_work = wb_target.Sheets(wb_target.Sheets.Count)
+    ws_work.Name = work_name
+    
+    # --- 6. Insert header row if needed ---
+    if main_info.OriginCell.AddHeader:
+        row = main_info.OriginCell.Row
+        col = main_info.OriginCell.Col
+        ws_work.Rows(row).Insert()
+        for attr in attribute_info:
+            ws_work.Cells(row, col + attr.ColPos - 1).Value = attr.AttrName
+    
+    # --- 7. Delete upper rows / left columns if needed ---
+    if main_info.OriginCell.DeleteUpperRow:
+        if main_info.OriginCell.Row > 1:
+            ws_work.Range(ws_work.Rows(1), ws_work.Rows(main_info.OriginCell.Row - 1)).Delete()
+            main_info.OriginCell.Row = 1
+        if main_info.OriginCell.Col > 1:
+            ws_work.Range(ws_work.Columns(1), ws_work.Columns(main_info.OriginCell.Col - 1)).Delete()
+            main_info.OriginCell.Col = 1
+    
+    # --- 8. Trim header row ---
+    row = main_info.OriginCell.Row
+    max_col = ws_work.UsedRange.Columns.Count
+    
+    for col in range(main_info.OriginCell.Col, max_col + 1):
+        val = ws_work.Cells(row, col).Value
+        if isinstance(val, str):
+            # Remove line breaks
+            if main_info.TrimHeaderCrLf:
+                val = val.replace("\r", "").replace("\n", "")
+            # Remove spaces
+            trim_mode = getattr(main_info, "TrimHeaderSpace", "TrimBoth")
+            if trim_mode == "TrimAll":
+                val = val.replace(" ", "")
+            elif trim_mode == "TrimBoth":
+                val = val.strip()
+            elif trim_mode == "TrimLeft":
+                val = val.lstrip()
+            elif trim_mode == "TrimRight":
+                val = val.rstrip()
+            ws_work.Cells(row, col).Value = val
+    
+    # --- Optional: Save workbook ---
+    # wb_target.Save()  # or SaveAs to new path
+    
+    return True
