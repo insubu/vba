@@ -1,98 +1,91 @@
-'シート上の属性値をチェックする
-Private Function CheckSheet() As Boolean
-    On Error GoTo ErrHandler
-    Dim lngRow As Long
-    Dim lngRowMax As Long
-    Dim lngCol As Long
-    Dim lngColMax As Long
-    Dim lngColResult As Long
-    Dim strHeader As String
-    Dim strData As String
-    Dim strBuf As String
-    Dim strErrMsg As String
-    Dim lngAttributeInfoIndex As Long
-    Dim blnErrFlag As Boolean
-    Dim lngDataNumber As Long
-    
-    Application.Cursor = xlWait
-    Application.ScreenUpdating = False
-    
-    '作業シートを作成する（以降このシートを処理対象とする）
-    If MakeWorkSheet = False Then GoTo EndHandler
-    
-    '処理対象シートの最終行列を取得する
-'***** 2005/3/31 y.yamada upd-str
-'    lngRowMax = shtTarget.Cells(Rows.Count, MainInfo.OriginCell.Col).End(xlUp).Row
-'    lngColMax = shtTarget.Cells(MainInfo.OriginCell.Row, Columns.Count).End(xlToLeft).Column
-    lngRowMax = shtTarget.UsedRange.Rows.Count
-    lngColMax = shtTarget.UsedRange.Columns.Count
-'***** 2005/3/31 y.yamada upd-end
-    
-    '最終列に処理結果列を作成する
-    lngColResult = lngColMax + 1
-    shtTarget.Cells(MainInfo.OriginCell.Row, lngColResult).value = MainInfo.ResultHeadrName
-    
-    '行数分繰り返す
-    For lngRow = MainInfo.OriginCell.Row + 1 To lngRowMax
-        '処理経過を表示する
-        lngDataNumber = lngDataNumber + 1
-        Application.StatusBar = APP_TITLE & " " & "処理中です...[" & CStr(lngDataNumber) & "/" & CStr(lngRowMax - MainInfo.OriginCell.Row) & "件]"
-        
-        '列数分繰り返す
-        For lngCol = MainInfo.OriginCell.Col To lngColMax
-            'ヘッダとデータを取得する
-            strHeader = shtTarget.Cells(MainInfo.OriginCell.Row, lngCol).value
-            strData = shtTarget.Cells(lngRow, lngCol).value
-            
-            '属性名をキーとして属性情報におけるインデックスを取得する
-            lngAttributeInfoIndex = GetAttributeInfoIndex(strHeader)
-            If lngAttributeInfoIndex = -1 Then
-                '属性未定義エラー
-                Call OutputMsg(MSG_104, MODE_DLG, strHeader, vbExclamation, APP_TITLE)
-                GoTo EndHandler
-            End If
-            
-            '値を編集する
-            If EditValue(strData, lngAttributeInfoIndex, strErrMsg, strBuf) = False Then
-                '編集エラー
-                '　エラーセルに色を付ける
-                shtTarget.Cells(lngRow, lngCol).Interior.ColorIndex = MainInfo.ErrCellColor
-                '　処理結果列にエラーメッセージを表示する
-                shtTarget.Cells(lngRow, lngColResult).value = RESULT_NG & " [" & strHeader & ":" & strErrMsg & "]"
-                blnErrFlag = True   'エラー存在フラグON
-                '　次の行へ
-                Exit For
-            End If
-            If strData <> strBuf Then
-                '編集されたセルに色を付ける
-                shtTarget.Cells(lngRow, lngCol).Interior.ColorIndex = MainInfo.EditCellColor
-                shtTarget.Cells(lngRow, lngCol).value = strBuf
-            End If
-        Next lngCol
-        If lngCol = lngColMax + 1 Then
-            '全列処理できた場合は正常終了
-            shtTarget.Cells(lngRow, lngColResult).value = RESULT_OK
-        End If
-    Next lngRow
-    
-    Application.StatusBar = False
-    Application.ScreenUpdating = True
-    
-    If blnErrFlag = True Then
-        '１つでもエラーが存在する場合は確認ダイアログを表示する
-        Call OutputMsg(MSG_201, MODE_DLG, "", vbExclamation, APP_TITLE)
-        GoTo EndHandler
-    End If
-    
-    CheckSheet = True
-EndHandler:
-    On Error Resume Next
-    Application.Cursor = xlDefault
-    Application.ScreenUpdating = True
-    Application.StatusBar = False
-    Exit Function
-ErrHandler:
-    Call OutputMsg(MSG_999, MODE_ALL, mModuleName & "#" & "CheckSheet" & "#" & Err.number & "#" & Err.Description, vbCritical, APP_TITLE)
-    Resume EndHandler
-End Function
-    
+import win32com.client as win32
+
+def check_sheet(main_info, attribute_info, make_worksheet_func, get_attr_index_func, edit_value_func):
+    """
+    main_info: object with OriginCell, ResultHeaderName, ErrCellColor, EditCellColor, etc.
+    attribute_info: list of attribute objects with AttrName
+    make_worksheet_func: callable that prepares the work sheet (returns True/False)
+    get_attr_index_func: callable(header_name) -> int
+    edit_value_func: callable(data_str, attr_index) -> (ok:bool, err_msg:str, edited_value:str)
+    """
+    excel = win32.Dispatch("Excel.Application")
+    app = excel.Application
+
+    try:
+        app.Cursor = -4143  # xlWait
+        app.ScreenUpdating = False
+
+        # --- make worksheet ---
+        if not make_worksheet_func():
+            return False
+
+        # assuming shtTarget and bokTarget are global or accessible somehow
+        wb_target = app.ActiveWorkbook
+        ws_target = wb_target.ActiveSheet
+
+        # --- get used range bounds ---
+        used_range = ws_target.UsedRange
+        lngRowMax = used_range.Rows.Count
+        lngColMax = used_range.Columns.Count
+
+        # --- create result column ---
+        lngColResult = lngColMax + 1
+        ws_target.Cells(main_info.OriginCell.Row, lngColResult).Value = main_info.ResultHeaderName
+
+        blnErrFlag = False
+        lngDataNumber = 0
+
+        # --- iterate rows ---
+        for lngRow in range(main_info.OriginCell.Row + 1, lngRowMax + 1):
+            lngDataNumber += 1
+            app.StatusBar = f"{main_info.AppTitle} 処理中です... [{lngDataNumber}/{lngRowMax - main_info.OriginCell.Row}件]"
+
+            # --- iterate columns ---
+            for lngCol in range(main_info.OriginCell.Col, lngColMax + 1):
+                strHeader = ws_target.Cells(main_info.OriginCell.Row, lngCol).Value
+                strData = ws_target.Cells(lngRow, lngCol).Value
+
+                # attribute index
+                lngAttrIndex = get_attr_index_func(strHeader)
+                if lngAttrIndex == -1:
+                    # 未定義属性エラー
+                    msg = f"属性未定義: {strHeader}"
+                    print(msg)  # or call OutputMsg(MSG_104, ...)
+                    return False
+
+                ok, err_msg, edited_value = edit_value_func(strData, lngAttrIndex)
+
+                if not ok:
+                    # 編集エラー
+                    ws_target.Cells(lngRow, lngCol).Interior.ColorIndex = main_info.ErrCellColor
+                    ws_target.Cells(lngRow, lngColResult).Value = f"NG [{strHeader}:{err_msg}]"
+                    blnErrFlag = True
+                    break  # go to next row
+
+                if strData != edited_value:
+                    ws_target.Cells(lngRow, lngCol).Interior.ColorIndex = main_info.EditCellColor
+                    ws_target.Cells(lngRow, lngCol).Value = edited_value
+
+            # --- if all columns done ---
+            if lngCol == lngColMax + 1:
+                ws_target.Cells(lngRow, lngColResult).Value = "OK"
+
+        app.StatusBar = False
+        app.ScreenUpdating = True
+
+        # --- error summary dialog ---
+        if blnErrFlag:
+            print("エラーが存在します。確認してください。")
+            return False
+
+        return True
+
+    except Exception as e:
+        # error handler
+        print(f"[Error] CheckSheet: {e}")
+        return False
+
+    finally:
+        app.Cursor = -4143  # xlDefault
+        app.ScreenUpdating = True
+        app.StatusBar = False
