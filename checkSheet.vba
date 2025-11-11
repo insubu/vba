@@ -1,233 +1,125 @@
-'値を編集する
-Private Function EditValue(strValue As String, lngAttributeInfoIndex As Long, strErrMsg As String, strEditValue As String) As Boolean
-    On Error GoTo ErrHandler
-    Dim strBuf As String
-    Dim strChar As String
-    Dim strChar_next As String
-    Dim strWork As String
-    Dim intPos As Integer
-    Dim i As Long
-'***** 2005/3/31 y.yamada ins-str
-    Dim strDateStr As String
-'***** 2005/3/31 y.yamada ins-end
+def edit_value(str_value: str, attr_index: int, attribute_info, replace_info):
+    """
+    Python version of VBA EditValue
+    Params:
+        str_value (str): 原值
+        attr_index (int): AttributeInfo 的索引
+        attribute_info (list[dict]): 属性定义信息（取代 VBA 的 AttributeInfo 数组）
+        replace_info (list[dict]): 替换规则（取代 VBA 的 ReplaceInfo）
+    Returns:
+        (bool, str, str): (成功/失败, 错误信息, 编辑后的值)
+    """
 
-    strBuf = strValue
-    strErrMsg = ""
-    strEditValue = ""
-    
-    '改行削除
-    If AttributeInfo(lngAttributeInfoIndex).TrimCrLf = True Then
-        strBuf = Replace(strBuf, vbCr, "")
-        strBuf = Replace(strBuf, vbLf, "")
-    End If
-    
-    'スペース削除
-    Select Case AttributeInfo(lngAttributeInfoIndex).TrimSpace
-    Case enumTrimSpaceMode.TrimAll      '■全て
-        strBuf = Replace(strBuf, " ", "")
-    Case enumTrimSpaceMode.TrimBoth     '■両端
-'***** 2005/4/11 y.yamada upd-str
-'        strBuf = Trim(strBuf)
-        strBuf = TrimHankaku(strBuf)
-'***** 2005/4/11 y.yamada upd-end
-    Case enumTrimSpaceMode.TrimLeft     '■前方
-'***** 2005/4/11 y.yamada upd-str
-'        strBuf = LTrim(strBuf)
-        strBuf = LTrimHankaku(strBuf)
-'***** 2005/4/11 y.yamada upd-end
-    Case enumTrimSpaceMode.TrimRight    '■後方
-'***** 2005/4/11 y.yamada upd-str
-'        strBuf = RTrim(strBuf)
-        strBuf = RTrimHankaku(strBuf)
-'***** 2005/4/11 y.yamada upd-end
-    End Select
-    
-    '必須チェック
-    If AttributeInfo(lngAttributeInfoIndex).Indispensable = True And strBuf = "" Then
-        '必須属性未入力エラー
-        strErrMsg = "必須属性が未入力です。"
-        GoTo EndHandler
-    End If
+    try:
+        attr = attribute_info[attr_index]
+        buf = str_value or ""
+        err_msg = ""
+        edit_value = ""
 
-    '文字コードチェック
-    For intPos = 1 To Len(strBuf)
-        strChar = Mid(strBuf, intPos, 1)
-        If IsPermittedCode(strChar) = False Then
-            '文字コードエラー
-            strErrMsg = "使用不可文字[" & strChar & "]が入力されています。"
-            GoTo EndHandler
-        End If
-    Next intPos
-    
-    '属性の型による文字変換
-    Select Case AttributeInfo(lngAttributeInfoIndex).AttrType
-    Case enumAttributeType.IntegerNumber    '■整数
-        '半角に変換する
-        strBuf = StrConv(strBuf, vbNarrow)
-'***** 2005/3/31 y.yamada ins-str
-        If strBuf <> "" Then
-'***** 2005/3/31 y.yamada ins-end
-'***** 2005/3/31 y.yamada upd-str
-'            If IsNumeric(strBuf) = False Then
-            If IsNumeric(strBuf) = False Or InStr(strBuf, ",") <> 0 Then
-'***** 2005/3/31 y.yamada upd-end
-                strErrMsg = "数値以外が入力されています。"
-                GoTo EndHandler
-            End If
-            If InStr(strBuf, ".") <> 0 Then
-                strErrMsg = "小数点が入力されています。"
-                GoTo EndHandler
-            End If
-'***** 2005/3/31 y.yamada ins-str
-        End If
-'***** 2005/3/31 y.yamada ins-end
-    Case enumAttributeType.SmallNumber      '■小数
-        '半角に変換する
-        strBuf = StrConv(strBuf, vbNarrow)
-'***** 2005/3/31 y.yamada ins-str
-        If strBuf <> "" Then
-'***** 2005/3/31 y.yamada ins-end
-'***** 2005/3/31 y.yamada upd-str
-'            If IsNumeric(strBuf) = False Then
-            If IsNumeric(strBuf) = False Or InStr(strBuf, ",") <> 0 Then
-'***** 2005/3/31 y.yamada upd-end
-                strErrMsg = "数値以外が入力されています。"
-                GoTo EndHandler
-            End If
-'***** 2005/4/11 y.yamada del-str
-''***** 2005/3/31 y.yamada upd-str
-''            If InStr(strBuf, ".") <> 0 And AttributeInfo(lngAttributeInfoIndex).ByteEditMode = enumByteEditMode.Fixed Then
-'            If InStr(strBuf, ".") = 0 And AttributeInfo(lngAttributeInfoIndex).ByteEditMode <> enumByteEditMode.Complete Then
-''***** 2005/3/31 y.yamada upd-end
-'                strErrMsg = "小数点が入力されていません。"
-'                GoTo EndHandler
-'            End If
-'***** 2005/3/31 y.yamada ins-str
-'***** 2005/4/11 y.yamada del-end
-        End If
-'***** 2005/3/31 y.yamada ins-end
-    Case enumAttributeType.Narrow           '■半角
-        '半角に変換する
-        strBuf = StrConv(strBuf, vbNarrow)
-        '１文字づつチェックする
-        For intPos = 1 To Len(strBuf)
-            strChar = Mid(strBuf, intPos, 1)
-            If IsNarrow(strChar) = False Then
-                strErrMsg = "半角対象文字以外が入力されています。"
-                GoTo EndHandler
-            End If
-        Next intPos
-'***** 2005/3/31 y.yamada ins-str
-    Case enumAttributeType.Date             '■日付
-        '日付型の属性値を取得する
-        If GetDateStr(strBuf, AttributeInfo(lngAttributeInfoIndex).DateFormat_In, strDateStr) = False Then
-            strErrMsg = "入力された日付の書式が不正です。"
-            GoTo EndHandler
-        End If
-'***** 2005/3/31 y.yamada ins-end
-    Case Else
-        '置換対象[完全一致]を探す
-        For i = 0 To ReplaceInfoCount - 1
-            If ReplaceInfo(i).ReplaceMode = enumReplaceMode.Complete Then
-                If strBuf = ReplaceInfo(i).KeyString Then
-                    '存在した場合は置換する
-                    strBuf = ReplaceInfo(i).ReplaceString
-                    Exit For
-                End If
-            End If
-        Next i
-        If i = ReplaceInfoCount Then
-            '置換[完全一致]しなかった場合は１文字づづチェックする
-            For intPos = 1 To Len(strBuf)
-                strChar = Mid(strBuf, intPos, 1)
-                '置換対象[部分一致]を探す
-                For i = 0 To ReplaceInfoCount - 1
-                    If ReplaceInfo(i).ReplaceMode = enumReplaceMode.Partial Then
-                        If InStr(intPos, strBuf, ReplaceInfo(i).KeyString) = intPos Then
-                            '存在した場合は作業用バッファに置換文字を足す
-                            strWork = strWork & ReplaceInfo(i).ReplaceString
-                            Exit For
-                        End If
-                    End If
-                Next i
-                If i = ReplaceInfoCount Then
-                    '置換[部分一致]しなかった場合は型ごとに文字を変換する
-                    Select Case AttributeInfo(lngAttributeInfoIndex).AttrType
-                    Case enumAttributeType.Wide         '■全角
-                        '全て全角に変換する
-                        strChar = ConvToWide(strBuf, intPos)
-                    Case enumAttributeType.Alphanumeric '■英数字
-                        If IsAlphanumeric(strChar) = True Then
-                            '英数字を半角に変換する
-                            strChar = StrConv(strChar, vbNarrow)
-                        Else
-                            'それ以外は全角に変換する
-                            strChar = ConvToWide(strBuf, intPos)
-                        End If
-                    Case enumAttributeType.NarrowKana   '■半角カナ
-                        '半角カナを全角に変換する
-                        strChar = ConvNarrowKanaToWide(strBuf, intPos)
-                    End Select
-                    '作業用バッファに変換後文字を足す
-                    strWork = strWork & strChar
-                End If
-            Next intPos
-            strBuf = strWork
-        End If
-    End Select
+        # --- 改行削除 ---
+        if attr.get("TrimCrLf"):
+            buf = buf.replace("\r", "").replace("\n", "")
 
-    'バイト数加工
-    Select Case AttributeInfo(lngAttributeInfoIndex).ByteEditMode
-    Case enumByteEditMode.Fixed     '■固定
-        If IsCompleteByte(strBuf, AttributeInfo(lngAttributeInfoIndex).ByteSize_Left, AttributeInfo(lngAttributeInfoIndex).ByteSize_Right) = False Then
-            strErrMsg = "入力された文字のバイト数が規定値と異なります。"
-            GoTo EndHandler
-        End If
-    Case enumByteEditMode.Complete  '■補完
-        If IsPermittedByte(strBuf, AttributeInfo(lngAttributeInfoIndex).ByteSize_Left, AttributeInfo(lngAttributeInfoIndex).ByteSize_Right) = False Then
-            strErrMsg = "入力された文字のバイト数が規定値を超えています。"
-            GoTo EndHandler
-        End If
-        If AttributeInfo(lngAttributeInfoIndex).AttrType = enumAttributeType.Date Then
-'***** 2005/3/31 y.yamada upd-str
-'            '日付型の場合は文字列の書式を変換する
-'            If FormatDate(strBuf, AttributeInfo(lngAttributeInfoIndex).DateFormat_In, AttributeInfo(lngAttributeInfoIndex).DateFormat_Out, strBuf) = False Then
-'                strErrMsg = "入力された日付の書式が不正です。"
-'                GoTo EndHandler
-'            End If
-            '日付文字列の書式を変換する
-            strBuf = FormatDate(strDateStr, AttributeInfo(lngAttributeInfoIndex).DateFormat_Out)
-'***** 2005/3/31 y.yamada upd-end
-        Else
-            'それ以外の場合は文字列を指定バイト数になるように指定文字で埋める
-            strBuf = FillString(strBuf, AttributeInfo(lngAttributeInfoIndex).ByteSize_Left, AttributeInfo(lngAttributeInfoIndex).ByteSize_Right, AttributeInfo(lngAttributeInfoIndex).CompleteChar)
-        End If
-    Case enumByteEditMode.Max       '■最大
-        If IsPermittedByte(strBuf, AttributeInfo(lngAttributeInfoIndex).ByteSize_Left, AttributeInfo(lngAttributeInfoIndex).ByteSize_Right) = False Then
-            strErrMsg = "入力された文字のバイト数が規定値を超えています。"
-            GoTo EndHandler
-        End If
-    End Select
-    
-    '大文字/小文字統一
-    Select Case AttributeInfo(lngAttributeInfoIndex).LetterType
-    Case enumLetterType.Capital '■大文字
-        '大文字に変換する
-        strBuf = UCase(strBuf)
-    Case enumLetterType.Small   '■小文字
-        '小文字に変換する
-        strBuf = LCase(strBuf)
-    End Select
+        # --- スペース削除 ---
+        trim_mode = attr.get("TrimSpace")
+        if trim_mode == "TrimAll":
+            buf = buf.replace(" ", "")
+        elif trim_mode == "TrimBoth":
+            buf = buf.strip()
+        elif trim_mode == "TrimLeft":
+            buf = buf.lstrip()
+        elif trim_mode == "TrimRight":
+            buf = buf.rstrip()
 
-    '編集後の文字列を返す
-    strEditValue = strBuf
-    
-    EditValue = True
-EndHandler:
-    On Error Resume Next
-    Exit Function
-ErrHandler:
-    Call OutputMsg(MSG_999, MODE_ALL, mModuleName & "#" & "EditValue" & "#" & Err.number & "#" & Err.Description, vbCritical, APP_TITLE)
-    Resume EndHandler
-End Function
+        # --- 必須チェック ---
+        if attr.get("Indispensable") and buf == "":
+            return False, "必須属性が未入力です。", ""
 
+        # --- 文字コードチェック ---
+        for ch in buf:
+            if not is_permitted_code(ch):
+                return False, f"使用不可文字[{ch}]が入力されています。", ""
+
+        # --- 属性の型による文字変換 ---
+        attr_type = attr.get("AttrType")
+        if attr_type == "IntegerNumber":
+            buf = to_half_width(buf)
+            if buf and (not buf.isdigit() or "," in buf or "." in buf):
+                return False, "数値以外または小数点/カンマが入力されています。", ""
+        elif attr_type == "SmallNumber":
+            buf = to_half_width(buf)
+            if buf and (not is_numeric(buf) or "," in buf):
+                return False, "数値以外が入力されています。", ""
+        elif attr_type == "Narrow":
+            buf = to_half_width(buf)
+            for ch in buf:
+                if not is_narrow(ch):
+                    return False, "半角対象文字以外が入力されています。", ""
+        elif attr_type == "Date":
+            date_str = get_date_str(buf, attr.get("DateFormat_In"))
+            if not date_str:
+                return False, "入力された日付の書式が不正です。", ""
+        else:
+            # --- 置換処理 ---
+            replaced = False
+            for r in replace_info:
+                if r["ReplaceMode"] == "Complete" and buf == r["KeyString"]:
+                    buf = r["ReplaceString"]
+                    replaced = True
+                    break
+
+            if not replaced:
+                work = ""
+                i = 0
+                while i < len(buf):
+                    ch = buf[i]
+                    matched = False
+                    for r in replace_info:
+                        if r["ReplaceMode"] == "Partial" and buf.startswith(r["KeyString"], i):
+                            work += r["ReplaceString"]
+                            i += len(r["KeyString"])
+                            matched = True
+                            break
+                    if not matched:
+                        if attr_type == "Wide":
+                            ch = to_wide(ch)
+                        elif attr_type == "Alphanumeric":
+                            ch = to_half_width(ch) if is_alphanumeric(ch) else to_wide(ch)
+                        elif attr_type == "NarrowKana":
+                            ch = narrow_kana_to_wide(ch)
+                        work += ch
+                        i += 1
+                buf = work
+
+        # --- バイト数加工 ---
+        byte_mode = attr.get("ByteEditMode")
+        left_size = attr.get("ByteSize_Left")
+        right_size = attr.get("ByteSize_Right")
+
+        if byte_mode == "Fixed":
+            if not is_complete_byte(buf, left_size, right_size):
+                return False, "入力された文字のバイト数が規定値と異なります。", ""
+        elif byte_mode == "Complete":
+            if not is_permitted_byte(buf, left_size, right_size):
+                return False, "入力された文字のバイト数が規定値を超えています。", ""
+            if attr_type == "Date":
+                buf = format_date(date_str, attr.get("DateFormat_Out"))
+            else:
+                buf = fill_string(buf, left_size, right_size, attr.get("CompleteChar"))
+        elif byte_mode == "Max":
+            if not is_permitted_byte(buf, left_size, right_size):
+                return False, "入力された文字のバイト数が規定値を超えています。", ""
+
+        # --- 大文字小文字統一 ---
+        letter_type = attr.get("LetterType")
+        if letter_type == "Capital":
+            buf = buf.upper()
+        elif letter_type == "Small":
+            buf = buf.lower()
+
+        return True, "", buf
+
+    except Exception as e:
+        # VBA の ErrHandler 相当
+        print(f"[Error] EditValue: {e}")
+        return False, str(e), ""
