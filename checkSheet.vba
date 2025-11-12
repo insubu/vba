@@ -1,16 +1,18 @@
-'指定された文字が英数字かどうかを取得する
-Private Function IsAlphanumeric(strChar As String) As Boolean
-    Dim blnRet As Boolean
-    Dim strChar_work As String
-    
-    '半角に変換する
-    strChar_work = StrConv(strChar, vbNarrow)
-    If (48 <= Asc(strChar_work) And Asc(strChar_work) <= 57) Or _
-       (65 <= Asc(strChar_work) And Asc(strChar_work) <= 90) Or _
-       (97 <= Asc(strChar_work) And Asc(strChar_work) <= 122) Then
-        'ASCIIコードが48～57・65～90・97～122
-        blnRet = True       '英数字である
-    End If
-    
-    IsAlphanumeric = blnRet
-End Function
+import jaconv
+
+def is_alphanumeric(char: str) -> bool:
+    """
+    Check if a given character is alphanumeric (A–Z, a–z, 0–9).
+    Equivalent to VBA IsAlphanumeric with StrConv(..., vbNarrow).
+    """
+    if not char:
+        return False
+
+    # Convert to half-width (vbNarrow equivalent)
+    char_half = jaconv.z2h(char, kana=False, digit=True, ascii=True)
+
+    code = ord(char_half)
+    # 0-9: 48–57, A-Z: 65–90, a-z: 97–122
+    if (48 <= code <= 57) or (65 <= code <= 90) or (97 <= code <= 122):
+        return True
+    return False
