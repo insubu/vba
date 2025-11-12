@@ -1,11 +1,12 @@
-'指定された文字が半角かどうかを取得する
-Private Function IsNarrow(strChar As String) As Boolean
-    Dim blnRet As Boolean
-    
-    If 32 <= Asc(strChar) And Asc(strChar) <= 126 Then
-        'ASCIIコードが0～255
-        blnRet = True       '半角である
-    End If
-    
-    IsNarrow = blnRet
-End Function
+def is_narrow(char: str) -> bool:
+    """
+    Check if a given character is half-width (ASCII range 32–126).
+    Equivalent to VBA IsNarrow().
+    """
+    if not char:
+        return False
+
+    code = ord(char)
+    if 32 <= code <= 126:
+        return True
+    return False
