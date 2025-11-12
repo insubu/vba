@@ -1,91 +1,78 @@
-import win32com.client as win32
+'指定された文字のコードが許容範囲かどうかを取得する
+Private Function IsPermittedCode(strChar As String) As Boolean
+    Dim blnRet As Boolean
+    Dim i As Integer
+    
+    If 0 <= Asc(strChar) And Asc(strChar) <= 255 Then
+        'ASCIIコードが0～255
+        blnRet = True       '許容範囲である
+    Else
+        '句点コード情報数分繰り返す
+        For i = 0 To MainInfo.PeriodCodeCount - 1
+            If CInt("&H" & MainInfo.PeriodCode(i).From) <= Asc(strChar) And Asc(strChar) <= CInt("&H" & MainInfo.PeriodCode(i).To) Then
+                'ASCIIコードが指定範囲内に収まる場合
+                blnRet = True       '許容範囲である
+                Exit For
+            End If
+        Next i
+    End If
+    
+    IsPermittedCode = blnRet
+End Function
 
-def check_sheet(main_info, attribute_info, make_worksheet_func, get_attr_index_func, edit_value_func):
-    """
-    main_info: object with OriginCell, ResultHeaderName, ErrCellColor, EditCellColor, etc.
-    attribute_info: list of attribute objects with AttrName
-    make_worksheet_func: callable that prepares the work sheet (returns True/False)
-    get_attr_index_func: callable(header_name) -> int
-    edit_value_func: callable(data_str, attr_index) -> (ok:bool, err_msg:str, edited_value:str)
-    """
-    excel = win32.Dispatch("Excel.Application")
-    app = excel.Application
+'文字列のバイト数がが指定バイト数以下かどうかを取得する
+Private Function IsPermittedByte(strValue As String, intByte_Left As Integer, intByte_Right As Integer) As Boolean
+    Dim strValue_Left As String
+    Dim strValue_Right As String
+    
+'***** 2005/3/31 y.yamada upd-str
+'    If InStr(strValue, ".") = 0 Then
+'        '小数点がない場合
+'        strValue_Left = strValue
+'    Else
+'        '小数点がある場合は整数部と小数部に分ける
+'        strValue_Left = Left(strValue, InStr(strValue, ".") - 1)
+'        strValue_Right = Mid(strValue, InStr(strValue, ".") + 1)
+'    End If
+    If intByte_Right <> 0 Then
+        '小数の場合
+        If InStr(strValue, ".") = 0 Then
+            '小数点がない場合
+            strValue_Left = strValue
+        Else
+            '小数点がある場合は整数部と小数部に分ける
+            strValue_Left = Left(strValue, InStr(strValue, ".") - 1)
+            strValue_Right = Mid(strValue, InStr(strValue, ".") + 1)
+        End If
+    Else
+        'それ以外の場合
+        strValue_Left = strValue
+    End If
+'***** 2005/3/31 y.yamada upd-end
+    
+    '整数部をチェックする
+'***** 2005/3/31 y.yamada upd-str
+'    If strValue_Left <> "" And intByte_Left <> 0 Then
+    If intByte_Left <> 0 Then
+'***** 2005/3/31 y.yamada upd-end
+        If LenB(StrConv(strValue_Left, vbFromUnicode)) > intByte_Left Then
+            'バイト数オーバーエラー
+            GoTo EndHandler
+        End If
+    End If
+    '小数部をチェックする
+'***** 2005/3/31 y.yamada upd-str
+'    If strValue_Right <> "" And intByte_Right <> 0 Then
+    If intByte_Right <> 0 Then
+'***** 2005/3/31 y.yamada upd-end
+        If LenB(StrConv(strValue_Right, vbFromUnicode)) > intByte_Right Then
+            'バイト数オーバーエラー
+            GoTo EndHandler
+        End If
+    End If
 
-    try:
-        app.Cursor = -4143  # xlWait
-        app.ScreenUpdating = False
+    IsPermittedByte = True
+EndHandler:
+    Exit Function
+End Function
 
-        # --- make worksheet ---
-        if not make_worksheet_func():
-            return False
-
-        # assuming shtTarget and bokTarget are global or accessible somehow
-        wb_target = app.ActiveWorkbook
-        ws_target = wb_target.ActiveSheet
-
-        # --- get used range bounds ---
-        used_range = ws_target.UsedRange
-        lngRowMax = used_range.Rows.Count
-        lngColMax = used_range.Columns.Count
-
-        # --- create result column ---
-        lngColResult = lngColMax + 1
-        ws_target.Cells(main_info.OriginCell.Row, lngColResult).Value = main_info.ResultHeaderName
-
-        blnErrFlag = False
-        lngDataNumber = 0
-
-        # --- iterate rows ---
-        for lngRow in range(main_info.OriginCell.Row + 1, lngRowMax + 1):
-            lngDataNumber += 1
-            app.StatusBar = f"{main_info.AppTitle} 処理中です... [{lngDataNumber}/{lngRowMax - main_info.OriginCell.Row}件]"
-
-            # --- iterate columns ---
-            for lngCol in range(main_info.OriginCell.Col, lngColMax + 1):
-                strHeader = ws_target.Cells(main_info.OriginCell.Row, lngCol).Value
-                strData = ws_target.Cells(lngRow, lngCol).Value
-
-                # attribute index
-                lngAttrIndex = get_attr_index_func(strHeader)
-                if lngAttrIndex == -1:
-                    # 未定義属性エラー
-                    msg = f"属性未定義: {strHeader}"
-                    print(msg)  # or call OutputMsg(MSG_104, ...)
-                    return False
-
-                ok, err_msg, edited_value = edit_value_func(strData, lngAttrIndex)
-
-                if not ok:
-                    # 編集エラー
-                    ws_target.Cells(lngRow, lngCol).Interior.ColorIndex = main_info.ErrCellColor
-                    ws_target.Cells(lngRow, lngColResult).Value = f"NG [{strHeader}:{err_msg}]"
-                    blnErrFlag = True
-                    break  # go to next row
-
-                if strData != edited_value:
-                    ws_target.Cells(lngRow, lngCol).Interior.ColorIndex = main_info.EditCellColor
-                    ws_target.Cells(lngRow, lngCol).Value = edited_value
-
-            # --- if all columns done ---
-            if lngCol == lngColMax + 1:
-                ws_target.Cells(lngRow, lngColResult).Value = "OK"
-
-        app.StatusBar = False
-        app.ScreenUpdating = True
-
-        # --- error summary dialog ---
-        if blnErrFlag:
-            print("エラーが存在します。確認してください。")
-            return False
-
-        return True
-
-    except Exception as e:
-        # error handler
-        print(f"[Error] CheckSheet: {e}")
-        return False
-
-    finally:
-        app.Cursor = -4143  # xlDefault
-        app.ScreenUpdating = True
-        app.StatusBar = False
