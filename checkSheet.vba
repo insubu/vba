@@ -1,12 +1,5 @@
-def is_narrow(char: str) -> bool:
-    """
-    Check if a given character is half-width (ASCII range 32–126).
-    Equivalent to VBA IsNarrow().
-    """
-    if not char:
-        return False
-
-    code = ord(char)
-    if 32 <= code <= 126:
-        return True
-    return False
+                        If InStr(intPos, strBuf, ReplaceInfo(i).KeyString) = intPos Then
+                            '存在した場合は作業用バッファに置換文字を足す
+                            strWork = strWork & ReplaceInfo(i).ReplaceString
+                            Exit For
+                        End If
