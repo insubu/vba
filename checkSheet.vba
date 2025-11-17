@@ -1,96 +1,87 @@
-'チェック処理後の属性情報をファイルに保存する
-Public Function SaveResultToFile() As Boolean
-    On Error GoTo ErrHandler
-    Dim intFileNum As Integer
-    Dim strDirPath As String
-    Dim strFileName As String
-    Dim lngRow As Long
-    Dim lngRowMin As Long
-    Dim lngRowMax As Long
-    Dim lngCol As Long
-    Dim lngColMax As Long
-    Dim strHeader As String
-    Dim strData As String
-    Dim strBuf As String
-    Dim lngAttributeInfoIndex As Long
+import os
+from datetime import datetime
+import pandas as pd
 
-    '保存先ディレクトリ
-    strDirPath = MainInfo.SaveDirPath
-    If strDirPath = "" Then
-        '未指定の場合は処理対象ブックと同じ位置
-        strDirPath = bokTarget.path
-    End If
-    '保存ファイル名
-    strFileName = objFso.GetBaseName(bokTarget.FullName) & "_" & Format(Now, "YYYYMMDDhhmmss") & "." & MainInfo.SaveExtension
 
-    '書き込みモードでファイルをオープンする
-    intFileNum = FreeFile()
-    Open strDirPath & "\" & strFileName For Output As #intFileNum
-    
-    '最終行列を取得する
-'***** 2005/3/31 y.yamada upd-str
-'    lngRowMax = shtTarget.Cells(Rows.Count, MainInfo.OriginCell.Col).End(xlUp).Row
-'    lngColMax = shtTarget.Cells(MainInfo.OriginCell.Row, Columns.Count).End(xlToLeft).Column
-    lngRowMax = shtTarget.UsedRange.Rows.Count
-    lngColMax = shtTarget.UsedRange.Columns.Count
-'***** 2005/3/31 y.yamada upd-end
-    
-    If MainInfo.OriginCell.AddHeader = False And MainInfo.SaveMode <> enumSaveMode.Fixed Then
-        'ヘッダ追加モードでなく、固定長でない場合はヘッダを出力する
-        lngRowMin = MainInfo.OriginCell.Row
-    Else
-        'それ以外の場合はヘッダを出力しない
-        lngRowMin = MainInfo.OriginCell.Row + 1
-    End If
-    
-    '行数分繰り返す
-    For lngRow = lngRowMin To lngRowMax
-        strBuf = ""
-        '列数分繰り返す
-        For lngCol = MainInfo.OriginCell.Col To lngColMax - 1
-            'ヘッダとデータを取得する
-            strHeader = shtTarget.Cells(MainInfo.OriginCell.Row, lngCol).value
-            strData = shtTarget.Cells(lngRow, lngCol).value
-            
-            If lngRow <> MainInfo.OriginCell.Row Then
-                '属性名をキーとして属性情報におけるインデックスを取得する
-                lngAttributeInfoIndex = GetAttributeInfoIndex(strHeader)
-                If lngAttributeInfoIndex = -1 Then
-                    '属性未定義エラー
-                    Call OutputMsg(MSG_104, MODE_DLG, strHeader, vbExclamation, APP_TITLE)
-                    GoTo EndHandler
-                End If
-                
-                Select Case AttributeInfo(lngAttributeInfoIndex).AttrType
-                Case enumAttributeType.Alphanumeric, enumAttributeType.Date, enumAttributeType.Narrow, enumAttributeType.NarrowKana, enumAttributeType.Wide
-                    '数値型以外の場合はデータをダブルコートで囲む（固定長を除く）
-                    If MainInfo.SaveMode <> enumSaveMode.Fixed Then
-                        strData = PutDQ(strData)
-                    End If
-                End Select
-            End If
-            If lngCol <> MainInfo.OriginCell.Col Then
-                'ファイル保存方法に応じたセパレータで連結していく
-                Select Case MainInfo.SaveMode
-                Case enumSaveMode.Csv, enumSaveMode.TextComma
-                    strBuf = strBuf & ","
-                Case enumSaveMode.TextTab
-                    strBuf = strBuf & vbTab
-                End Select
-            End If
-            strBuf = strBuf & strData
-        Next lngCol
-        '１行分書き込む
-        Print #intFileNum, strBuf
-    Next lngRow
-    
-    SaveResultToFile = True
-EndHandler:
-    On Error Resume Next
-    Close intFileNum
-    Exit Function
-ErrHandler:
-    Call OutputMsg(MSG_999, MODE_ALL, mModuleName & "#" & "SaveResultToFile" & "#" & Err.number & "#" & Err.Description, vbCritical, APP_TITLE)
-    GoTo EndHandler
-End Function
+def save_result_to_file(df, MainInfo, AttributeInfo, GetAttributeInfoIndex, PutDQ):
+    """
+    df: pandas DataFrame，对应 Excel 的 shtTarget 的 UsedRange
+    MainInfo: 包含 SaveDirPath / SaveExtension / OriginCell / SaveMode 等信息的对象
+    AttributeInfo: 属性定义数组
+    GetAttributeInfoIndex: 函数
+    PutDQ: 函数（双引号处理）
+    """
 
+    try:
+        # 保存路径
+        save_dir = MainInfo.SaveDirPath
+        if not save_dir:
+            save_dir = MainInfo.bokTargetPath     # 对应 bokTarget.path
+
+        # 文件名
+        file_name = (
+            f"{MainInfo.bokTargetBaseName}_"
+            f"{datetime.now().strftime('%Y%m%d%H%M%S')}."
+            f"{MainInfo.SaveExtension}"
+        )
+        full_path = os.path.join(save_dir, file_name)
+
+        # 行列范围
+        row_min = (
+            MainInfo.OriginCell.Row
+            if (not MainInfo.OriginCell.AddHeader and
+                MainInfo.SaveMode != MainInfo.enumSaveMode.Fixed)
+            else MainInfo.OriginCell.Row + 1
+        )
+
+        row_max = df.shape[0]      # UsedRange.Rows.Count
+        col_max = df.shape[1]      # UsedRange.Columns.Count
+
+        # 打开文件
+        with open(full_path, "w", encoding="utf-8") as f:
+
+            # 行循环
+            for r in range(row_min - 1, row_max):   # DataFrame 行号从 0 开始
+                row_buf = []
+
+                # 列循环
+                for c in range(MainInfo.OriginCell.Col - 1, col_max):
+                    header = df.iloc[MainInfo.OriginCell.Row - 1, c]
+                    data = df.iloc[r, c]
+
+                    if r != MainInfo.OriginCell.Row - 1:
+                        # 查属性定义
+                        idx = GetAttributeInfoIndex(header)
+                        if idx == -1:
+                            raise Exception(f"[属性未定义]: {header}")
+
+                        attr = AttributeInfo[idx]
+                        if attr.AttrType in [
+                            attr.enumAttributeType.Alphanumeric,
+                            attr.enumAttributeType.Date,
+                            attr.enumAttributeType.Narrow,
+                            attr.enumAttributeType.NarrowKana,
+                            attr.enumAttributeType.Wide
+                        ]:
+                            if MainInfo.SaveMode != MainInfo.enumSaveMode.Fixed:
+                                data = PutDQ(data)
+
+                    row_buf.append("" if data is None else str(data))
+
+                # 按保存方式插入分隔符
+                if MainInfo.SaveMode in (MainInfo.enumSaveMode.Csv,
+                                         MainInfo.enumSaveMode.TextComma):
+                    sep = ","
+                elif MainInfo.SaveMode == MainInfo.enumSaveMode.TextTab:
+                    sep = "\t"
+                else:
+                    sep = ""
+
+                f.write(sep.join(row_buf) + "\n")
+
+        return True
+
+    except Exception as e:
+        # 对应 VBA 的 OutputMsg
+        print("Error in save_result_to_file:", e)
+        return False
