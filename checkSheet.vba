@@ -1,61 +1,72 @@
 import os
 from datetime import datetime
-import pandas as pd
+import win32com.client as win32
 
 
-def save_result_to_file(df, MainInfo, AttributeInfo, GetAttributeInfoIndex, PutDQ):
+def save_result_to_file(
+    shtTarget,
+    MainInfo,
+    AttributeInfo,
+    GetAttributeInfoIndex,
+    PutDQ
+):
     """
-    df: pandas DataFrame，对应 Excel 的 shtTarget 的 UsedRange
-    MainInfo: 包含 SaveDirPath / SaveExtension / OriginCell / SaveMode 等信息的对象
-    AttributeInfo: 属性定义数组
+    shtTarget: Excel 工作表对象 (win32com)
+    MainInfo: 包含 SaveDirPath / SaveExtension / OriginCell / SaveMode 等
+    AttributeInfo: 属性信息数组
     GetAttributeInfoIndex: 函数
-    PutDQ: 函数（双引号处理）
+    PutDQ: 函数
     """
 
     try:
-        # 保存路径
+        # ===== 保存路径处理 =====
         save_dir = MainInfo.SaveDirPath
         if not save_dir:
-            save_dir = MainInfo.bokTargetPath     # 对应 bokTarget.path
+            save_dir = MainInfo.bokTargetPath  # 对应 bokTarget.path
 
-        # 文件名
-        file_name = (
+        # ===== 文件名 =====
+        filename = (
             f"{MainInfo.bokTargetBaseName}_"
             f"{datetime.now().strftime('%Y%m%d%H%M%S')}."
             f"{MainInfo.SaveExtension}"
         )
-        full_path = os.path.join(save_dir, file_name)
+        full_path = os.path.join(save_dir, filename)
 
-        # 行列范围
-        row_min = (
-            MainInfo.OriginCell.Row
-            if (not MainInfo.OriginCell.AddHeader and
-                MainInfo.SaveMode != MainInfo.enumSaveMode.Fixed)
-            else MainInfo.OriginCell.Row + 1
-        )
+        # ===== UsedRange（对应 VBA）=====
+        used = shtTarget.UsedRange
+        row_max = used.Rows.Count
+        col_max = used.Columns.Count
 
-        row_max = df.shape[0]      # UsedRange.Rows.Count
-        col_max = df.shape[1]      # UsedRange.Columns.Count
+        # ===== 行起点（与 VBA 完全一致）=====
+        if (not MainInfo.OriginCell.AddHeader and
+                MainInfo.SaveMode != MainInfo.enumSaveMode.Fixed):
+            row_min = MainInfo.OriginCell.Row
+        else:
+            row_min = MainInfo.OriginCell.Row + 1
 
-        # 打开文件
+        # ===== 打开输出文件 =====
         with open(full_path, "w", encoding="utf-8") as f:
 
-            # 行循环
-            for r in range(row_min - 1, row_max):   # DataFrame 行号从 0 开始
-                row_buf = []
+            # ===== 行循环 =====
+            for r in range(row_min, row_max + 1):
 
-                # 列循环
-                for c in range(MainInfo.OriginCell.Col - 1, col_max):
-                    header = df.iloc[MainInfo.OriginCell.Row - 1, c]
-                    data = df.iloc[r, c]
+                buf_list = []
 
-                    if r != MainInfo.OriginCell.Row - 1:
-                        # 查属性定义
+                # ===== 列循环 =====
+                for c in range(MainInfo.OriginCell.Col, col_max):
+
+                    header = shtTarget.Cells(MainInfo.OriginCell.Row, c).Value
+                    data = shtTarget.Cells(r, c).Value
+
+                    # ----- 非 Header 行处理 -----
+                    if r != MainInfo.OriginCell.Row:
                         idx = GetAttributeInfoIndex(header)
                         if idx == -1:
-                            raise Exception(f"[属性未定义]: {header}")
+                            raise Exception(f"Attribute undefined: {header}")
 
                         attr = AttributeInfo[idx]
+
+                        # 数值型以外 → 双引号包围（固定长除外）
                         if attr.AttrType in [
                             attr.enumAttributeType.Alphanumeric,
                             attr.enumAttributeType.Date,
@@ -66,22 +77,24 @@ def save_result_to_file(df, MainInfo, AttributeInfo, GetAttributeInfoIndex, PutD
                             if MainInfo.SaveMode != MainInfo.enumSaveMode.Fixed:
                                 data = PutDQ(data)
 
-                    row_buf.append("" if data is None else str(data))
+                    buf_list.append("" if data is None else str(data))
 
-                # 按保存方式插入分隔符
-                if MainInfo.SaveMode in (MainInfo.enumSaveMode.Csv,
-                                         MainInfo.enumSaveMode.TextComma):
+                # ===== 分隔符处理 =====
+                if MainInfo.SaveMode in (
+                    MainInfo.enumSaveMode.Csv,
+                    MainInfo.enumSaveMode.TextComma
+                ):
                     sep = ","
                 elif MainInfo.SaveMode == MainInfo.enumSaveMode.TextTab:
                     sep = "\t"
                 else:
                     sep = ""
 
-                f.write(sep.join(row_buf) + "\n")
+                f.write(sep.join(buf_list) + "\n")
 
         return True
 
     except Exception as e:
-        # 对应 VBA 的 OutputMsg
-        print("Error in save_result_to_file:", e)
+        # 对应 VBA ErrHandler
+        print("SaveResultToFile Error:", e)
         return False
